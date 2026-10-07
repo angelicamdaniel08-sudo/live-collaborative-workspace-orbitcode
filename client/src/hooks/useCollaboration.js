@@ -4,8 +4,12 @@ import { getRandomUser } from '../utils/helpers';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
 
-export function useCollaboration(initialRoomId = 'workspace-alpha') {
+export function useCollaboration(initialRoomId = 'workspace-alpha', initialPasscode = '') {
   const [roomId, setRoomId] = useState(initialRoomId);
+  const [passcode, setPasscode] = useState(initialPasscode);
+  const [isRoomProtected, setIsRoomProtected] = useState(false);
+  const [authError, setAuthError] = useState(null);
+
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('orbit_user');
     return saved ? JSON.parse(saved) : getRandomUser();
@@ -18,18 +22,20 @@ export function useCollaboration(initialRoomId = 'workspace-alpha') {
   const [terminalLogs, setTerminalLogs] = useState([]);
   const [isTerminalRunning, setIsTerminalRunning] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
-  const [remoteCursors, setRemoteCursors] = useState({}); // socketId -> { user, cursor, selection, fileName }
+  const [remoteCursors, setRemoteCursors] = useState({});
 
   const socketRef = useRef(null);
-  const isSelfChangeRef = useRef(false);
 
   // Save current user profile in localStorage
   useEffect(() => {
     localStorage.setItem('orbit_user', JSON.stringify(currentUser));
   }, [currentUser]);
 
-  // Connect socket
+  // Connect & join room
   useEffect(() => {
+    setAuthError(null);
+    setConnectionStatus('connecting');
+
     const socket = io(SOCKET_SERVER_URL, {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 10,
@@ -38,9 +44,10 @@ export function useCollaboration(initialRoomId = 'workspace-alpha') {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      setConnectionStatus('connected');
+      // Send join request with credentials
       socket.emit('join-room', {
         roomId,
+        passcode,
         user: currentUser,
       });
     });
@@ -53,8 +60,18 @@ export function useCollaboration(initialRoomId = 'workspace-alpha') {
       setConnectionStatus('disconnected');
     });
 
+    // Handle Authentication / Passcode Errors
+    socket.on('join-error', (err) => {
+      setConnectionStatus('disconnected');
+      setIsRoomProtected(true);
+      setAuthError(err);
+    });
+
     // 1. Initial Room Snapshot
     socket.on('room-state', (state) => {
+      setConnectionStatus('connected');
+      setAuthError(null);
+      setIsRoomProtected(Boolean(state.isProtected));
       setFiles(state.files || {});
       if (state.activeFile) setActiveFileName(state.activeFile);
       setUsers(state.users || []);
@@ -130,11 +147,10 @@ export function useCollaboration(initialRoomId = 'workspace-alpha') {
     return () => {
       socket.disconnect();
     };
-  }, [roomId]);
+  }, [roomId, passcode]);
 
   // Code change broadcaster
   const updateCode = useCallback((fileName, newCode) => {
-    // Update local state immediately
     setFiles((prev) => {
       if (!prev[fileName]) return prev;
       return {
@@ -143,7 +159,6 @@ export function useCollaboration(initialRoomId = 'workspace-alpha') {
       };
     });
 
-    // Broadcast to server
     if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('code-change', {
         roomId,
@@ -221,6 +236,19 @@ export function useCollaboration(initialRoomId = 'workspace-alpha') {
     }
   }, [roomId]);
 
+  // Room switching with credentials
+  const switchRoom = useCallback((newRoomId, newPasscode = '') => {
+    setRoomId(newRoomId);
+    setPasscode(newPasscode);
+    setAuthError(null);
+    setRemoteCursors({});
+  }, []);
+
+  const submitPasscode = useCallback((enteredPasscode) => {
+    setPasscode(enteredPasscode);
+    setAuthError(null);
+  }, []);
+
   const clearTerminal = useCallback(() => {
     setTerminalLogs([]);
   }, []);
@@ -232,6 +260,12 @@ export function useCollaboration(initialRoomId = 'workspace-alpha') {
   return {
     roomId,
     setRoomId,
+    passcode,
+    isRoomProtected,
+    authError,
+    setAuthError,
+    submitPasscode,
+    switchRoom,
     currentUser,
     users,
     files,

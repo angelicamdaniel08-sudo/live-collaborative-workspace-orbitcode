@@ -5,9 +5,10 @@ import { EditorPanel } from './components/EditorPanel';
 import { ActiveUsersPanel } from './components/ActiveUsersPanel';
 import { ActivityLogsPanel } from './components/ActivityLogsPanel';
 import { TerminalPanel } from './components/TerminalPanel';
+import { RoomModal } from './components/RoomModal';
+import { PasscodePromptModal } from './components/PasscodePromptModal';
 
 export function App() {
-  // Read room from URL query parameter or fallback to default
   const getInitialRoom = () => {
     const params = new URLSearchParams(window.location.search);
     return params.get('room') || 'workspace-alpha';
@@ -16,6 +17,7 @@ export function App() {
   const [roomId, setRoomId] = useState(getInitialRoom);
   const [editorTheme, setEditorTheme] = useState('vs-dark');
   const [isTerminalOpen, setIsTerminalOpen] = useState(true);
+  const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
 
   // Sync URL when room changes
   useEffect(() => {
@@ -35,6 +37,11 @@ export function App() {
     isTerminalRunning,
     connectionStatus,
     remoteCursors,
+    isRoomProtected,
+    authError,
+    setAuthError,
+    submitPasscode,
+    switchRoom,
     updateCode,
     updateCursor,
     setTypingStatus,
@@ -48,7 +55,6 @@ export function App() {
   } = useCollaboration(roomId);
 
   const handleLanguageChange = (newLang) => {
-    // When language changes from navbar, update current file or state
     if (activeFileName && files[activeFileName]) {
       updateCode(activeFileName, activeFile.content);
     }
@@ -59,12 +65,17 @@ export function App() {
     runCode(activeFileName, activeFile.content, activeFile.language);
   }, [activeFileName, activeFile, isTerminalOpen, runCode]);
 
+  const handleJoinFromModal = (newRoomId, newPasscode) => {
+    setRoomId(newRoomId);
+    switchRoom(newRoomId, newPasscode);
+  };
+
   return (
     <div className="app-container">
       {/* Top Navigation Bar */}
       <Navbar
         roomId={roomId}
-        setRoomId={setRoomId}
+        isRoomProtected={isRoomProtected}
         connectionStatus={connectionStatus}
         usersCount={users.length}
         activeLanguage={activeFile?.language || 'javascript'}
@@ -75,6 +86,7 @@ export function App() {
         isExecuting={isTerminalRunning}
         isTerminalOpen={isTerminalOpen}
         setIsTerminalOpen={setIsTerminalOpen}
+        onOpenRoomModal={() => setIsRoomModalOpen(true)}
       />
 
       {/* Main Split Layout */}
@@ -124,6 +136,26 @@ export function App() {
           />
         </aside>
       </main>
+
+      {/* Room Manager Modal (Switch / Create / Passcode Protection) */}
+      <RoomModal
+        isOpen={isRoomModalOpen}
+        onClose={() => setIsRoomModalOpen(false)}
+        currentRoomId={roomId}
+        onJoinRoom={handleJoinFromModal}
+      />
+
+      {/* Passcode Prompt Modal (Triggered on Auth Challenge) */}
+      <PasscodePromptModal
+        isOpen={Boolean(authError)}
+        roomId={roomId}
+        errorMessage={authError?.message || ''}
+        onSubmitPasscode={submitPasscode}
+        onSwitchRoom={() => {
+          setAuthError(null);
+          setIsRoomModalOpen(true);
+        }}
+      />
     </div>
   );
 }

@@ -4,21 +4,20 @@ import {
   Share2, 
   Users, 
   Terminal as TerminalIcon, 
-  Layers, 
   Check, 
-  Copy, 
   Zap, 
-  Circle,
-  Settings2,
+  Lock,
+  Globe,
   RefreshCw,
-  Sparkles
+  DoorOpen,
+  Plus
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { LANGUAGES, THEMES } from '../utils/helpers';
 
 export function Navbar({
   roomId,
-  setRoomId,
+  isRoomProtected,
   connectionStatus,
   usersCount,
   activeLanguage,
@@ -29,11 +28,9 @@ export function Navbar({
   isExecuting,
   isTerminalOpen,
   setIsTerminalOpen,
-  onOpenInviteModal
+  onOpenRoomModal
 }) {
   const [copied, setCopied] = useState(false);
-  const [roomInput, setRoomInput] = useState(roomId);
-  const [isEditingRoom, setIsEditingRoom] = useState(false);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -47,19 +44,9 @@ export function Navbar({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleRoomSubmit = (e) => {
-    e.preventDefault();
-    if (roomInput.trim() && roomInput.trim() !== roomId) {
-      setRoomId(roomInput.trim());
-      setIsEditingRoom(false);
-    } else {
-      setIsEditingRoom(false);
-    }
-  };
-
   return (
     <header className="h-14 border-b border-white/10 bg-[#0c101c]/90 backdrop-blur-md px-4 flex items-center justify-between z-30 select-none">
-      {/* Left: Brand & Room */}
+      {/* Left: Brand & Room Controls */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
@@ -74,30 +61,25 @@ export function Navbar({
 
         <div className="h-4 w-px bg-white/10" />
 
-        {/* Room Badge / Switcher */}
-        <div className="flex items-center gap-2 bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1 text-xs">
-          <span className="text-slate-400 font-medium">Room:</span>
-          {isEditingRoom ? (
-            <form onSubmit={handleRoomSubmit} className="flex items-center gap-1">
-              <input
-                type="text"
-                value={roomInput}
-                onChange={(e) => setRoomInput(e.target.value)}
-                onBlur={() => setIsEditingRoom(false)}
-                autoFocus
-                className="bg-slate-800 text-slate-100 px-2 py-0.5 rounded border border-blue-500/50 outline-none text-xs font-mono w-28"
-              />
-            </form>
-          ) : (
-            <button
-              onClick={() => setIsEditingRoom(true)}
-              title="Click to switch room"
-              className="text-blue-400 font-mono hover:text-blue-300 transition-colors font-medium flex items-center gap-1"
-            >
+        {/* Room Switcher / Management Trigger */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onOpenRoomModal}
+            className="flex items-center gap-2 bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-blue-500/40 rounded-lg px-2.5 py-1 text-xs transition-all group"
+            title="Click to Switch or Create Room"
+          >
+            {isRoomProtected ? (
+              <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            ) : (
+              <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            )}
+            <span className="text-slate-200 font-mono font-medium group-hover:text-blue-400">
               #{roomId}
-              <span className="text-[10px] text-slate-500 underline decoration-dotted">edit</span>
-            </button>
-          )}
+            </span>
+            <span className="text-[10px] text-slate-500 group-hover:text-slate-300 ml-1">
+              Switch ▾
+            </span>
+          </button>
         </div>
 
         {/* Connection Status */}

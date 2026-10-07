@@ -20,14 +20,13 @@ const io = new Server(server, {
   pingTimeout: 60000,
 });
 
-// Default starter files for new collaboration rooms
-const DEFAULT_FILES = {
-  'main.js': {
-    name: 'main.js',
-    language: 'javascript',
-    content: `// ⚡ Real-time Collaborative Workspace
-// Try editing simultaneously with other tabs or browser windows!
-
+// Template packs for creating rooms
+const TEMPLATES = {
+  javascript: {
+    'main.js': {
+      name: 'main.js',
+      language: 'javascript',
+      content: `// ⚡ Real-time Collaborative Workspace (JavaScript)
 function calculateAnalytics(data) {
   console.log("📊 Processing collaborative dataset...");
   const sum = data.reduce((acc, val) => acc + val, 0);
@@ -38,23 +37,58 @@ function calculateAnalytics(data) {
   return { sum, avg, max, min, timestamp: new Date().toISOString() };
 }
 
-// Sample metrics
 const metrics = [42, 88, 95, 12, 64, 73, 105, 59];
 const result = calculateAnalytics(metrics);
 
 console.log("✨ Live Execution Result:");
 console.log(JSON.stringify(result, null, 2));
 
-// Test async streaming simulation
 setTimeout(() => {
   console.log("🚀 Sync status: All connected peers in sync!");
 }, 500);
 `,
+    },
+    'styles.css': {
+      name: 'styles.css',
+      language: 'css',
+      content: `/* 🎨 Collaborative Theme Variables */
+:root {
+  --primary-accent: #3b82f6;
+  --neon-glow: 0 0 15px rgba(59, 130, 246, 0.5);
+  --glass-bg: rgba(17, 24, 39, 0.85);
+  --border-subtle: rgba(255, 255, 255, 0.1);
+}
+
+.collaborative-card {
+  backdrop-filter: blur(12px);
+  background: var(--glass-bg);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--neon-glow);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+`,
+    },
+    'schema.json': {
+      name: 'schema.json',
+      language: 'json',
+      content: `{
+  "workspace": "OrbitCode Live",
+  "version": "1.0.0",
+  "features": [
+    "real-time-sync",
+    "remote-cursors",
+    "collaborative-terminal",
+    "passcode-protection"
+  ]
+}
+`,
+    },
   },
-  'algorithm.py': {
-    name: 'algorithm.py',
-    language: 'python',
-    content: `# 🐍 Collaborative Python Algorithm Playground
+  python: {
+    'algorithm.py': {
+      name: 'algorithm.py',
+      language: 'python',
+      content: `# 🐍 Collaborative Python Algorithm Playground
 import math
 import time
 
@@ -73,65 +107,50 @@ sorted_nums = quick_sort(numbers)
 print(f"Sorted list:   {sorted_nums}")
 print("Algorithm execution verified across workspace nodes.")
 `,
-  },
-  'styles.css': {
-    name: 'styles.css',
-    language: 'css',
-    content: `/* 🎨 Collaborative Theme Variables */
-:root {
-  --primary-accent: #3b82f6;
-  --neon-glow: 0 0 15px rgba(59, 130, 246, 0.5);
-  --glass-bg: rgba(17, 24, 39, 0.85);
-  --border-subtle: rgba(255, 255, 255, 0.1);
-}
-
-.collaborative-card {
-  backdrop-filter: blur(12px);
-  background: var(--glass-bg);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--neon-glow);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    },
+    'data.json': {
+      name: 'data.json',
+      language: 'json',
+      content: `{
+  "experiment": "Sorting Benchmark",
+  "sampleSize": 9,
+  "status": "verified"
 }
 `,
+    },
   },
-  'schema.json': {
-    name: 'schema.json',
-    language: 'json',
-    content: `{
-  "workspace": "OrbitCode Live",
-  "version": "1.0.0",
-  "features": [
-    "real-time-sync",
-    "remote-cursors",
-    "collaborative-terminal",
-    "activity-telemetry"
-  ],
-  "settings": {
-    "autoSave": true,
-    "cursorDecorations": true,
-    "telemetry": "verbose"
-  }
-}
-`,
+  blank: {
+    'main.js': {
+      name: 'main.js',
+      language: 'javascript',
+      content: `// 🚀 Blank Collaborative Session\nconsole.log("Welcome to your private workspace!");\n`,
+    },
   },
 };
 
 // Rooms state store
-// rooms[roomId] = { files, activeFile, users: { socketId: User }, logs: [], version: 1 }
+// rooms[roomId] = { id, passcode, isProtected, files, activeFile, users, logs, version, createdAt }
 const rooms = new Map();
 
-function getOrCreateRoom(roomId) {
+function getOrCreateRoom(roomId, options = {}) {
+  const { passcode = null, template = 'javascript' } = options;
+
   if (!rooms.has(roomId)) {
-    // Deep clone default files
+    const templateSet = TEMPLATES[template] || TEMPLATES.javascript;
     const filesClone = {};
-    for (const [key, val] of Object.entries(DEFAULT_FILES)) {
+    for (const [key, val] of Object.entries(templateSet)) {
       filesClone[key] = { ...val };
     }
 
+    const firstFileName = Object.keys(filesClone)[0] || 'main.js';
+    const isProtected = Boolean(passcode && passcode.trim() !== '');
+
     rooms.set(roomId, {
       id: roomId,
+      passcode: isProtected ? passcode.trim() : null,
+      isProtected,
       files: filesClone,
-      activeFile: 'main.js',
+      activeFile: firstFileName,
       users: new Map(),
       logs: [],
       version: 1,
@@ -141,7 +160,7 @@ function getOrCreateRoom(roomId) {
     addActivityLog(roomId, {
       type: 'system',
       user: { username: 'System', color: '#6366f1' },
-      text: `Workspace room "${roomId}" initialized with multi-file support.`,
+      text: `Workspace room "${roomId}" initialized (${isProtected ? '🔒 Protected' : '🌐 Public'}).`,
     });
   }
   return rooms.get(roomId);
@@ -153,7 +172,7 @@ function addActivityLog(roomId, { type, user, text, details = null }) {
 
   const logEntry = {
     id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    type, // 'join' | 'leave' | 'edit' | 'cursor' | 'run' | 'file' | 'system' | 'profile'
+    type, // 'join' | 'leave' | 'edit' | 'cursor' | 'run' | 'file' | 'system' | 'profile' | 'auth'
     user: user || { username: 'Guest', color: '#94a3b8' },
     text,
     details,
@@ -161,7 +180,6 @@ function addActivityLog(roomId, { type, user, text, details = null }) {
     fullTimestamp: new Date().toISOString(),
   };
 
-  // Keep last 150 logs per room
   room.logs.unshift(logEntry);
   if (room.logs.length > 150) {
     room.logs.pop();
@@ -170,7 +188,11 @@ function addActivityLog(roomId, { type, user, text, details = null }) {
   return logEntry;
 }
 
-// REST Health Check & Room Stats
+// ----------------------------------------------------
+// REST API Endpoints
+// ----------------------------------------------------
+
+// 1. Health Check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',
@@ -179,6 +201,81 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// 2. List Public / Available Rooms
+app.get('/api/rooms', (req, res) => {
+  const list = [];
+  rooms.forEach((room, id) => {
+    list.push({
+      id: room.id,
+      activeUsersCount: room.users.size,
+      isProtected: room.isProtected,
+      activeFile: room.activeFile,
+      filesCount: Object.keys(room.files).length,
+      createdAt: room.createdAt,
+    });
+  });
+  res.json({ rooms: list });
+});
+
+// 3. Room Verification endpoint
+app.post('/api/rooms/verify', (req, res) => {
+  const { roomId, passcode } = req.body;
+  if (!roomId) {
+    return res.status(400).json({ error: 'Room ID is required.' });
+  }
+
+  const room = rooms.get(roomId);
+  if (!room) {
+    return res.json({
+      exists: false,
+      isProtected: false,
+      valid: true,
+      message: 'Room is available to be created.',
+    });
+  }
+
+  if (!room.isProtected) {
+    return res.json({
+      exists: true,
+      isProtected: false,
+      valid: true,
+      message: 'Public room ready to join.',
+    });
+  }
+
+  // Room is protected -> check passcode
+  const isValid = passcode === room.passcode;
+  return res.json({
+    exists: true,
+    isProtected: true,
+    valid: isValid,
+    message: isValid ? 'Credentials verified.' : 'Invalid passcode.',
+  });
+});
+
+// 4. Create Room endpoint
+app.post('/api/rooms/create', (req, res) => {
+  const { roomId, passcode, template } = req.body;
+  if (!roomId || !roomId.trim()) {
+    return res.status(400).json({ error: 'Room ID is required.' });
+  }
+
+  const cleanId = roomId.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+
+  if (rooms.has(cleanId)) {
+    return res.status(409).json({ error: `Room "${cleanId}" already exists.` });
+  }
+
+  const newRoom = getOrCreateRoom(cleanId, { passcode, template });
+  res.json({
+    success: true,
+    roomId: newRoom.id,
+    isProtected: newRoom.isProtected,
+    createdAt: newRoom.createdAt,
+  });
+});
+
+// 5. Room details
 app.get('/api/rooms/:roomId', (req, res) => {
   const room = rooms.get(req.params.roomId);
   if (!room) {
@@ -186,23 +283,84 @@ app.get('/api/rooms/:roomId', (req, res) => {
   }
   res.json({
     id: room.id,
+    isProtected: room.isProtected,
     activeUsersCount: room.users.size,
     filesCount: Object.keys(room.files).length,
     activeFile: room.activeFile,
   });
 });
 
-// Real-time Socket.IO Handlers
+// ----------------------------------------------------
+// Real-time Socket.IO Handlers with Passcode Validation
+// ----------------------------------------------------
+
 io.on('connection', (socket) => {
   let currentRoomId = null;
   let currentUser = null;
 
-  // 1. Join Room
-  socket.on('join-room', ({ roomId, user }) => {
-    currentRoomId = roomId || 'default-room';
-    socket.join(currentRoomId);
+  // Pre-check room status
+  socket.on('check-room', ({ roomId }, callback) => {
+    if (!roomId) return callback?.({ exists: false, isProtected: false });
+    const room = rooms.get(roomId);
+    if (!room) {
+      return callback?.({ exists: false, isProtected: false });
+    }
+    return callback?.({
+      exists: true,
+      isProtected: room.isProtected,
+      activeUsersCount: room.users.size,
+    });
+  });
 
-    const room = getOrCreateRoom(currentRoomId);
+  // 1. Join Room with Passcode Authentication
+  socket.on('join-room', ({ roomId, passcode, user, template }) => {
+    const targetRoomId = (roomId || 'default-room').trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+
+    // Check if room already exists
+    let room = rooms.get(targetRoomId);
+
+    if (room) {
+      // Validate credentials if room is protected
+      if (room.isProtected) {
+        const providedPasscode = passcode ? String(passcode).trim() : '';
+        if (providedPasscode !== room.passcode) {
+          // Reject connection & notify client with auth error
+          socket.emit('join-error', {
+            code: 'INVALID_PASSCODE',
+            message: 'Protected workspace: Incorrect or missing passcode.',
+            requiresPasscode: true,
+            roomId: targetRoomId,
+          });
+
+          addActivityLog(targetRoomId, {
+            type: 'auth',
+            user: { username: user?.username || 'Guest', color: '#f43f5e' },
+            text: `Failed join attempt: Invalid passcode from ${user?.username || 'Unknown user'}.`,
+          });
+          return;
+        }
+      }
+    } else {
+      // Create new room with optional passcode & template
+      room = getOrCreateRoom(targetRoomId, { passcode, template });
+    }
+
+    // Leave any previous room
+    if (currentRoomId && currentRoomId !== targetRoomId) {
+      socket.leave(currentRoomId);
+      const prevRoom = rooms.get(currentRoomId);
+      if (prevRoom) {
+        prevRoom.users.delete(socket.id);
+        socket.to(currentRoomId).emit('user-left', {
+          socketId: socket.id,
+          user: currentUser,
+          users: Array.from(prevRoom.users.values()),
+        });
+      }
+    }
+
+    currentRoomId = targetRoomId;
+    socket.join(currentRoomId);
 
     currentUser = {
       socketId: socket.id,
@@ -225,10 +383,12 @@ io.on('connection', (socket) => {
       text: `${currentUser.username} joined the workspace`,
     });
 
-    // Send complete room snapshot to joining user
     const usersList = Array.from(room.users.values());
+
+    // Send complete room snapshot with protection status
     socket.emit('room-state', {
       roomId: currentRoomId,
+      isProtected: room.isProtected,
       files: room.files,
       activeFile: room.activeFile,
       users: usersList,
@@ -237,7 +397,7 @@ io.on('connection', (socket) => {
       version: room.version,
     });
 
-    // Notify other peers in room about new user and activity
+    // Notify other room participants
     socket.to(currentRoomId).emit('user-joined', {
       user: currentUser,
       users: usersList,
@@ -258,7 +418,6 @@ io.on('connection', (socket) => {
 
     room.version += 1;
 
-    // Broadcast code update to everyone else in room
     socket.to(roomId || currentRoomId).emit('code-update', {
       fileName,
       code,
@@ -297,7 +456,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 5. User Profile Update (Name / Color / Avatar)
+  // 5. User Profile Update
   socket.on('user-update', ({ roomId, updates }) => {
     const room = rooms.get(roomId || currentRoomId);
     if (!room || !currentUser) return;
@@ -404,7 +563,6 @@ io.on('connection', (socket) => {
 
     try {
       if (language === 'javascript' || targetFile.endsWith('.js') || targetFile.endsWith('.ts')) {
-        // Safe sandbox simulation collecting logs
         const captured = [];
         const customConsole = {
           log: (...args) => captured.push({ type: 'log', message: args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') }),
@@ -416,7 +574,6 @@ io.on('connection', (socket) => {
           info: (...args) => captured.push({ type: 'info', message: args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ') }),
         };
 
-        // Sandbox evaluation wrapper
         const runFn = new Function('console', 'setTimeout', `
           try {
             ${codeToRun}
@@ -432,7 +589,6 @@ io.on('connection', (socket) => {
           outputLogs.push({ type: 'info', message: 'Program executed successfully with no console output.' });
         }
       } else if (language === 'python' || targetFile.endsWith('.py')) {
-        // Simulated Python output parser
         const lines = codeToRun.split('\n');
         const prints = lines.filter(l => l.trim().startsWith('print('));
         outputLogs.push({ type: 'info', message: `🐍 Running Python Script [${targetFile}]...` });
@@ -467,7 +623,6 @@ io.on('connection', (socket) => {
       details: { status: isError ? 'error' : 'success', duration: `${duration}ms` },
     });
 
-    // Broadcast output & log to ALL participants in room
     io.in(roomId || currentRoomId).emit('code-output', {
       runner: currentUser?.username || 'Collaborator',
       fileName: targetFile,
@@ -499,8 +654,6 @@ io.on('connection', (socket) => {
         users: Array.from(room.users.values()),
         log: leaveLog,
       });
-
-      // Cleanup empty room after 10 minutes if desired
     }
   });
 });
