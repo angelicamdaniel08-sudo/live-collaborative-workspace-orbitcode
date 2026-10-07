@@ -1,0 +1,16 @@
+{
+  "name": "live-collaborative-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time collaborative code editor and workspace with Monaco Editor, Socket.IO, active presence, and live activity streams.",
+  "scripts": {
+    "start": "node server/server.js",
+    "server": "node server/server.js",
+    "client": "npm --prefix client run dev",
+    "dev:server": "node --watch server/server.js",
+    "dev:client": "npm --prefix client run dev"
+  },
+  "keywords": ["collaborative", "monaco-editor", "socket.io", "react", "realtime", "workspace"],
+  "author": "",
+  "license": "MIT"
+}
