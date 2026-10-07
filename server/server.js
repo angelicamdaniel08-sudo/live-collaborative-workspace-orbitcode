@@ -129,8 +129,30 @@ print("Algorithm execution verified across workspace nodes.")
 };
 
 // Rooms state store
-// rooms[roomId] = { id, passcode, isProtected, files, activeFile, users, logs, version, createdAt }
+// rooms[roomId] = { id, passcode, isProtected, files, activeFile, users, logs, version, createdAt, hostSocketId }
 const rooms = new Map();
+
+// ─── Per-socket Rate Limiter ────────────────────────────────────────────────
+// Allows at most 5 'code-change' broadcasts per socket per second.
+const rateLimits = new Map(); // socketId -> { count: number, windowStart: number }
+
+function checkRateLimit(socketId) {
+  const now = Date.now();
+  const entry = rateLimits.get(socketId) || { count: 0, windowStart: now };
+
+  if (now - entry.windowStart >= 1000) {
+    // New 1-second window
+    entry.count = 1;
+    entry.windowStart = now;
+    rateLimits.set(socketId, entry);
+    return true;
+  }
+
+  entry.count += 1;
+  rateLimits.set(socketId, entry);
+  return entry.count <= 5; // allow up to 5 per second
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 function getOrCreateRoom(roomId, options = {}) {
   const { passcode = null, template = 'javascript' } = options;
@@ -155,6 +177,7 @@ function getOrCreateRoom(roomId, options = {}) {
       logs: [],
       version: 1,
       createdAt: new Date().toISOString(),
+      hostSocketId: null, // tracks which socket currently holds host privileges
     });
 
     addActivityLog(roomId, {
@@ -362,6 +385,12 @@ io.on('connection', (socket) => {
     currentRoomId = targetRoomId;
     socket.join(currentRoomId);
 
+    // ── Host assignment: first user in room, or if current host slot is vacant ──
+    const shouldBeHost =
+      room.users.size === 0 ||
+      !room.hostSocketId ||
+      !room.users.has(room.hostSocketId);
+
     currentUser = {
       socketId: socket.id,
       id: user?.id || `usr_${socket.id.slice(0, 5)}`,
@@ -373,7 +402,12 @@ io.on('connection', (socket) => {
       activeFile: room.activeFile,
       joinedAt: new Date().toISOString(),
       status: 'online',
+      isHost: shouldBeHost,
     };
+
+    if (shouldBeHost) {
+      room.hostSocketId = socket.id;
+    }
 
     room.users.set(socket.id, currentUser);
 
@@ -409,6 +443,24 @@ io.on('connection', (socket) => {
   socket.on('code-change', ({ roomId, fileName, code, version }) => {
     const room = rooms.get(roomId || currentRoomId);
     if (!room || !fileName) return;
+
+    // ── Connection Throttling ────────────────────────────────────────────────
+    if (!checkRateLimit(socket.id)) {
+      const warningLog = addActivityLog(currentRoomId, {
+        type: 'system',
+        user: currentUser || { username: 'Unknown', color: '#f59e0b' },
+        text: `⚡ Rate limit hit: ${currentUser?.username || 'A user'} is sending updates too fast — throttling applied.`,
+      });
+      // Warn the offending client
+      socket.emit('rate-limit-warning', {
+        message: 'You are sending updates too fast (>5/sec). Updates are being temporarily throttled.',
+        log: warningLog,
+      });
+      // Push the log entry live to all room members' activity feeds
+      io.in(currentRoomId).emit('activity-log', { log: warningLog });
+      return; // drop this update
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     if (!room.files[fileName]) {
       room.files[fileName] = { name: fileName, language: 'javascript', content: code };
@@ -634,8 +686,11 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 8. Disconnect Cleanup
+  // 8. Disconnect Cleanup + Dynamic Host Migration
   socket.on('disconnect', () => {
+    // Clean up rate limit entry for this socket
+    rateLimits.delete(socket.id);
+
     if (currentRoomId && rooms.has(currentRoomId)) {
       const room = rooms.get(currentRoomId);
       const user = room.users.get(socket.id);
@@ -647,6 +702,44 @@ io.on('connection', (socket) => {
         user: user || { username: 'A collaborator', color: '#94a3b8' },
         text: `${user?.username || 'A collaborator'} disconnected`,
       });
+
+      // ── Dynamic Host Migration ─────────────────────────────────────────────
+      // If the disconnecting socket was the room host, reassign to the oldest
+      // remaining participant (lowest joinedAt timestamp).
+      if (room.hostSocketId === socket.id && room.users.size > 0) {
+        let newHost = null;
+        let oldestTime = Infinity;
+
+        room.users.forEach((u) => {
+          const t = new Date(u.joinedAt).getTime();
+          if (t < oldestTime) {
+            oldestTime = t;
+            newHost = u;
+          }
+        });
+
+        if (newHost) {
+          newHost.isHost = true;
+          room.hostSocketId = newHost.socketId;
+
+          const migrationLog = addActivityLog(currentRoomId, {
+            type: 'system',
+            user: { username: 'System', color: '#6366f1' },
+            text: `👑 Host migrated to ${newHost.username} (previous host disconnected).`,
+          });
+
+          // Notify the entire room of the host change
+          io.in(currentRoomId).emit('host-migrated', {
+            newHostSocketId: newHost.socketId,
+            newHost,
+            users: Array.from(room.users.values()),
+            log: migrationLog,
+          });
+        } else {
+          room.hostSocketId = null;
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────────
 
       socket.to(currentRoomId).emit('user-left', {
         socketId: socket.id,

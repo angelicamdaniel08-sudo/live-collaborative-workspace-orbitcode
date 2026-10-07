@@ -19,6 +19,7 @@ export function Navbar({
   roomId,
   isRoomProtected,
   connectionStatus,
+  reconnectAttempts,
   usersCount,
   activeLanguage,
   onLanguageChange,
@@ -28,7 +29,8 @@ export function Navbar({
   isExecuting,
   isTerminalOpen,
   setIsTerminalOpen,
-  onOpenRoomModal
+  onOpenRoomModal,
+  isHost,
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -76,6 +78,9 @@ export function Navbar({
             <span className="text-slate-200 font-mono font-medium group-hover:text-blue-400">
               #{roomId}
             </span>
+            {isHost && (
+              <span title="You are the room host" className="text-[10px] text-amber-400 font-bold">👑</span>
+            )}
             <span className="text-[10px] text-slate-500 group-hover:text-slate-300 ml-1">
               Switch ▾
             </span>
@@ -85,20 +90,30 @@ export function Navbar({
         {/* Connection Status */}
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-900/60 border border-white/5">
           <span className={`w-2 h-2 rounded-full ${
-            connectionStatus === 'connected' 
-              ? 'bg-emerald-400 animate-pulse-glow shadow-[0_0_8px_rgba(52,211,153,0.8)]' 
+            connectionStatus === 'connected'
+              ? 'bg-emerald-400 animate-pulse-glow shadow-[0_0_8px_rgba(52,211,153,0.8)]'
               : connectionStatus === 'connecting'
               ? 'bg-amber-400 animate-pulse'
+              : connectionStatus === 'reconnecting'
+              ? 'bg-amber-500 animate-pulse'
               : 'bg-rose-500'
           }`} />
           <span className={
-            connectionStatus === 'connected' 
-              ? 'text-emerald-400' 
-              : connectionStatus === 'connecting' 
-              ? 'text-amber-400' 
+            connectionStatus === 'connected'
+              ? 'text-emerald-400'
+              : connectionStatus === 'connecting'
+              ? 'text-amber-400'
+              : connectionStatus === 'reconnecting'
+              ? 'text-amber-400'
               : 'text-rose-400'
           }>
-            {connectionStatus === 'connected' ? 'Synced' : connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+            {connectionStatus === 'connected'
+              ? 'Synced'
+              : connectionStatus === 'connecting'
+              ? 'Connecting...'
+              : connectionStatus === 'reconnecting'
+              ? `Reconnecting${reconnectAttempts > 0 ? ` (${reconnectAttempts}/10)` : '...'}`
+              : 'Disconnected'}
           </span>
         </div>
       </div>

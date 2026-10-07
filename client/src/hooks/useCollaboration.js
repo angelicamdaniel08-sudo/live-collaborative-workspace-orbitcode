@@ -23,6 +23,9 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
   const [isTerminalRunning, setIsTerminalRunning] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [remoteCursors, setRemoteCursors] = useState({});
+  const [isHost, setIsHost] = useState(false);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [rateLimitWarning, setRateLimitWarning] = useState(null); // { message, timestamp }
 
   const socketRef = useRef(null);
 
@@ -52,12 +55,33 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
       });
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+      // Hard disconnect (server-side kick): stay disconnected
+      if (reason === 'io server disconnect') {
+        setConnectionStatus('disconnected');
+      } else {
+        // Socket.IO will auto-reconnect; surface that to the user
+        setConnectionStatus('reconnecting');
+      }
+    });
+
+    socket.on('reconnect_attempt', (attempt) => {
+      setReconnectAttempts(attempt);
+      setConnectionStatus('reconnecting');
+    });
+
+    socket.on('reconnect', () => {
+      // Socket reconnected — 'connect' fires next which re-emits join-room
+      setReconnectAttempts(0);
+    });
+
+    socket.on('reconnect_failed', () => {
       setConnectionStatus('disconnected');
+      setReconnectAttempts(0);
     });
 
     socket.on('connect_error', () => {
-      setConnectionStatus('disconnected');
+      setConnectionStatus('reconnecting');
     });
 
     // Handle Authentication / Passcode Errors
@@ -70,12 +94,16 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
     // 1. Initial Room Snapshot
     socket.on('room-state', (state) => {
       setConnectionStatus('connected');
+      setReconnectAttempts(0);
       setAuthError(null);
       setIsRoomProtected(Boolean(state.isProtected));
       setFiles(state.files || {});
       if (state.activeFile) setActiveFileName(state.activeFile);
       setUsers(state.users || []);
       setLogs(state.logs || []);
+      // Determine if this socket is the room host
+      const me = (state.users || []).find((u) => u.socketId === socket.id);
+      if (me) setIsHost(Boolean(me.isHost));
     });
 
     // 2. User Joined
@@ -142,6 +170,27 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
       setIsTerminalRunning(false);
       setTerminalLogs((prev) => [payload, ...prev]);
       if (payload.log) setLogs((prev) => [payload.log, ...prev]);
+    });
+
+    // 9. Dynamic Host Migration — server reassigned host to another participant
+    socket.on('host-migrated', ({ newHostSocketId, newHost, users: updatedUsers, log }) => {
+      setUsers(updatedUsers);
+      if (log) setLogs((prev) => [log, ...prev]);
+      // Check if WE are the new host
+      setIsHost(newHostSocketId === socket.id);
+    });
+
+    // 10. Rate Limit Warning — this socket is broadcasting too fast
+    socket.on('rate-limit-warning', ({ message, log }) => {
+      setRateLimitWarning({ message, timestamp: Date.now() });
+      if (log) setLogs((prev) => [log, ...prev]);
+      // Auto-dismiss after 5 seconds
+      setTimeout(() => setRateLimitWarning(null), 5000);
+    });
+
+    // 11. Live Activity Log Push — server-side events (rate-limit, etc.) broadcast to room
+    socket.on('activity-log', ({ log }) => {
+      if (log) setLogs((prev) => [log, ...prev]);
     });
 
     return () => {
@@ -267,6 +316,9 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
     submitPasscode,
     switchRoom,
     currentUser,
+    isHost,
+    reconnectAttempts,
+    rateLimitWarning,
     users,
     files,
     activeFile: files[activeFileName] || { name: activeFileName, language: 'javascript', content: '' },
