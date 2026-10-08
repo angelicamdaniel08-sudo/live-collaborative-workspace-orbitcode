@@ -53,6 +53,7 @@ export function App() {
 
   // Real-time Collaboration Hook
   const {
+    socketId,
     roomId: collaborationRoomId,
     currentUser,
     setCurrentUser,
@@ -331,6 +332,7 @@ export function App() {
           {/* Top Half: Active Users */}
           <ActiveUsersPanel
             currentUser={currentUser}
+            socketId={socketId}
             users={users}
             onUpdateUser={updateUserProfile}
           />

@@ -43,7 +43,7 @@ export function SignInScreen({ initialUser, onSignIn, invitedRoomId }) {
     }
 
     const userProfile = {
-      id: initialUser?.id || `usr_${Math.random().toString(36).substring(2, 9)}`,
+      id: `usr_${Math.random().toString(36).substring(2, 9)}_${Date.now().toString(36)}`,
       username: trimmed,
       avatar: selectedAvatar,
       color: selectedColor,

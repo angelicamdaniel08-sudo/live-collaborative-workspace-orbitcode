@@ -16,6 +16,8 @@ import {
   EyeOff
 } from 'lucide-react';
 
+const API_BASE_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
+
 export function RoomModal({
   isOpen,
   onClose,
@@ -45,7 +47,7 @@ export function RoomModal({
   const fetchRooms = async () => {
     try {
       setIsLoadingRooms(true);
-      const res = await fetch('http://localhost:4000/api/rooms');
+      const res = await fetch(`${API_BASE_URL}/api/rooms`);
       if (res.ok) {
         const data = await res.json();
         setAvailableRooms(data.rooms || []);
@@ -84,12 +86,17 @@ export function RoomModal({
 
     // Verify room credentials against backend before switching
     try {
-      const res = await fetch('http://localhost:4000/api/rooms/verify', {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomId: cleanId, passcode: joinPasscode.trim() }),
       });
       const data = await res.json();
+
+      if (!res.ok) {
+        setJoinError(data.error || 'Failed to verify room credentials.');
+        return;
+      }
 
       if (data.exists && data.isProtected && !data.valid) {
         setJoinError('Incorrect passcode for this protected room.');
@@ -123,7 +130,7 @@ export function RoomModal({
     setCreateError('');
 
     try {
-      const res = await fetch('http://localhost:4000/api/rooms/create', {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

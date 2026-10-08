@@ -29,13 +29,28 @@ export function EditorPanel({
 }) {
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
-  const decorationsCollectionRef = useRef(null);
+  const decorationsRef = useRef([]);
   const widgetsRef = useRef(new Map());
 
   const [cursorPos, setCursorPos] = useState({ lineNumber: 1, column: 1 });
   const [newFileName, setNewFileName] = useState('');
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [docStats, setDocStats] = useState({ lines: 1, chars: 0 });
+
+  // Convert hex color to rgba for selection background
+  const hexToRgba = (hex, alpha = 0.28) => {
+    if (!hex || typeof hex !== 'string') return `rgba(59, 130, 246, ${alpha})`;
+    let cleanHex = hex.replace('#', '');
+    if (cleanHex.length === 3) {
+      cleanHex = cleanHex.split('').map(c => c + c).join('');
+    }
+    const num = parseInt(cleanHex, 16);
+    if (isNaN(num)) return `rgba(59, 130, 246, ${alpha})`;
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
 
   // Handle Monaco Editor mount
   const handleEditorDidMount = (editor, monaco) => {
@@ -53,6 +68,21 @@ export function EditorPanel({
         lineNumber: e.position.lineNumber,
         column: e.position.column,
       }, editor.getSelection());
+    });
+
+    // Track text selection changes (mouse drag, shift+arrows)
+    editor.onDidChangeCursorSelection((e) => {
+      const pos = editor.getPosition();
+      if (pos) {
+        setCursorPos({
+          lineNumber: pos.lineNumber,
+          column: pos.column,
+        });
+        onCursorChange(activeFileName, {
+          lineNumber: pos.lineNumber,
+          column: pos.column,
+        }, e.selection);
+      }
     });
 
     // Track Typing Status
@@ -87,13 +117,24 @@ export function EditorPanel({
     });
   };
 
-  // Render Remote Cursors & User Tooltips in Monaco Editor
+  // Render Remote Cursors & Text Selections in Monaco Editor
   useEffect(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
     if (!editor || !monaco) return;
 
-    // Remove obsolete widgets
+    // 1. Manage Dynamic CSS for Remote User Selections
+    let styleTag = document.getElementById('monaco-remote-selection-styles');
+    if (!styleTag) {
+      styleTag = document.createElement('style');
+      styleTag.id = 'monaco-remote-selection-styles';
+      document.head.appendChild(styleTag);
+    }
+
+    const cssRules = [];
+    const newDecorations = [];
+
+    // 2. Remove obsolete cursor widgets
     widgetsRef.current.forEach((widget, socketId) => {
       if (!remoteCursors[socketId] || remoteCursors[socketId].fileName !== activeFileName) {
         editor.removeContentWidget(widget);
@@ -101,29 +142,61 @@ export function EditorPanel({
       }
     });
 
-    // Create or update remote cursor content widgets
+    // 3. Process remote cursor positions & text selections
     Object.entries(remoteCursors).forEach(([socketId, remoteData]) => {
       if (!remoteData || !remoteData.cursor || remoteData.fileName !== activeFileName) return;
 
-      const { user, cursor } = remoteData;
+      const { user, cursor, selection } = remoteData;
+      const cleanId = socketId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const userColor = user?.color || '#3b82f6';
+
+      // Generate CSS rule for this user's selection color
+      cssRules.push(`
+        .remote-sel-${cleanId} {
+          background-color: ${hexToRgba(userColor, 0.28)} !important;
+          border-radius: 2px;
+        }
+      `);
+
+      // Delta Decoration for Remote Text Selection
+      if (selection && (
+        selection.startLineNumber !== selection.endLineNumber ||
+        selection.startColumn !== selection.endColumn
+      )) {
+        newDecorations.push({
+          range: new monaco.Range(
+            selection.startLineNumber,
+            selection.startColumn,
+            selection.endLineNumber,
+            selection.endColumn
+          ),
+          options: {
+            className: `monaco-remote-selection remote-sel-${cleanId}`,
+            hoverMessage: [{ value: `**${user?.username || 'Collaborator'}**'s selection` }],
+          },
+        });
+      }
+
+      // Content Widget for Remote Caret & Name Tag
       let widget = widgetsRef.current.get(socketId);
+      const isTyping = user?.status === 'typing';
 
       if (!widget) {
-        // Build custom DOM widget for remote cursor with floating tag
         const domNode = document.createElement('div');
         domNode.className = 'monaco-remote-cursor';
         domNode.style.height = '20px';
-        domNode.style.backgroundColor = user?.color || '#3b82f6';
-        domNode.style.boxShadow = `0 0 8px ${user?.color || '#3b82f6'}`;
+        domNode.style.backgroundColor = userColor;
+        domNode.style.boxShadow = `0 0 8px ${userColor}`;
 
         const flagNode = document.createElement('div');
         flagNode.className = 'monaco-remote-cursor-flag';
-        flagNode.style.backgroundColor = user?.color || '#3b82f6';
-        flagNode.innerText = `${user?.avatar || '👤'} ${user?.username || 'Collaborator'}`;
+        flagNode.style.backgroundColor = userColor;
+        flagNode.innerText = `${user?.avatar || '👤'} ${user?.username || 'Collaborator'}${isTyping ? ' (typing...)' : ''}`;
         domNode.appendChild(flagNode);
 
         widget = {
           domNode,
+          flagNode,
           getId: () => `cursor_widget_${socketId}`,
           getDomNode: () => domNode,
           getPosition: () => ({
@@ -138,7 +211,16 @@ export function EditorPanel({
         editor.addContentWidget(widget);
         widgetsRef.current.set(socketId, widget);
       } else {
-        // Update position
+        // Update widget styles and flag text
+        if (widget.flagNode) {
+          widget.flagNode.innerText = `${user?.avatar || '👤'} ${user?.username || 'Collaborator'}${isTyping ? ' (typing...)' : ''}`;
+          widget.flagNode.style.backgroundColor = userColor;
+        }
+        if (widget.domNode) {
+          widget.domNode.style.backgroundColor = userColor;
+          widget.domNode.style.boxShadow = `0 0 8px ${userColor}`;
+        }
+
         widget.getPosition = () => ({
           position: {
             lineNumber: cursor.lineNumber || 1,
@@ -149,6 +231,12 @@ export function EditorPanel({
         editor.layoutContentWidget(widget);
       }
     });
+
+    // Apply dynamic style rules
+    styleTag.textContent = cssRules.join('\n');
+
+    // Apply selection deltaDecorations
+    decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDecorations);
   }, [remoteCursors, activeFileName]);
 
   // Update doc stats on change

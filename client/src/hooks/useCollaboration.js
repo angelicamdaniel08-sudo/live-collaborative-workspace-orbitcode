@@ -11,8 +11,20 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
   const [authError, setAuthError] = useState(null);
 
   const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('orbit_user');
-    return saved ? JSON.parse(saved) : getRandomUser();
+    let saved = null;
+    try {
+      const stored = localStorage.getItem('orbit_user');
+      if (stored) saved = JSON.parse(stored);
+    } catch {}
+    const base = getRandomUser();
+    // Unique session ID for each tab so multiple tabs don't collide on identical ID
+    const tabSessionId = `usr_${Math.random().toString(36).substring(2, 9)}`;
+    return {
+      id: tabSessionId,
+      username: saved?.username || base.username,
+      color: saved?.color || base.color,
+      avatar: saved?.avatar || base.avatar,
+    };
   });
 
   const [files, setFiles] = useState({});
@@ -56,11 +68,12 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
     socketRef.current = socket;
 
     socket.on('connect', () => {
+      setCurrentUser((prev) => ({ ...prev, socketId: socket.id }));
       // Send join request with credentials
       socket.emit('join-room', {
         roomId,
         passcode,
-        user: currentUser,
+        user: { ...currentUser, socketId: socket.id },
       });
     });
 
@@ -96,8 +109,24 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
     // Handle Authentication / Passcode Errors
     socket.on('join-error', (err) => {
       setConnectionStatus('disconnected');
-      setIsRoomProtected(true);
+      if (err.isClosed || err.code === 'ROOM_CLOSED') {
+        setIsRoomProtected(false);
+      } else {
+        setIsRoomProtected(true);
+      }
       setAuthError(err);
+    });
+
+    // Full users array synchronization from server
+    socket.on('users-update', ({ users: updatedUsers }) => {
+      if (Array.isArray(updatedUsers)) {
+        setUsers(updatedUsers);
+        const me = updatedUsers.find((u) => u.socketId === socket.id);
+        if (me) {
+          setIsHost(Boolean(me.isHost));
+          setCurrentUser((prev) => ({ ...prev, ...me, socketId: socket.id }));
+        }
+      }
     });
 
     // 1. Initial Room Snapshot
@@ -108,22 +137,52 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
       setIsRoomProtected(Boolean(state.isProtected));
       setFiles(state.files || {});
       if (state.activeFile) setActiveFileName(state.activeFile);
-      setUsers(state.users || []);
+      const roomUsers = state.users || [];
+      setUsers(roomUsers);
       setLogs(state.logs || []);
-      // Determine if this socket is the room host
-      const me = (state.users || []).find((u) => u.socketId === socket.id);
-      if (me) setIsHost(Boolean(me.isHost));
+
+      // Determine if this socket is the room host and set socketId
+      const me = roomUsers.find((u) => u.socketId === socket.id);
+      if (me) {
+        setIsHost(Boolean(me.isHost));
+        setCurrentUser((prev) => ({ ...prev, ...me, socketId: socket.id }));
+      }
+
+      // Initialize remote cursors for already present members so newly joined user sees them immediately
+      const initialRemoteCursors = {};
+      roomUsers.forEach((u) => {
+        if (u.socketId && u.socketId !== socket.id && u.cursor) {
+          initialRemoteCursors[u.socketId] = {
+            user: u,
+            cursor: u.cursor,
+            selection: u.selection,
+            fileName: u.activeFile || state.activeFile,
+          };
+        }
+      });
+      setRemoteCursors(initialRemoteCursors);
     });
 
     // 2. User Joined
     socket.on('user-joined', ({ user, users: updatedUsers, log }) => {
-      setUsers(updatedUsers);
+      if (Array.isArray(updatedUsers)) setUsers(updatedUsers);
       if (log) setLogs((prev) => [log, ...prev]);
+      if (user && user.socketId && user.socketId !== socketRef.current?.id) {
+        setRemoteCursors((prev) => ({
+          ...prev,
+          [user.socketId]: {
+            user,
+            cursor: user.cursor || { lineNumber: 1, column: 1 },
+            selection: user.selection,
+            fileName: user.activeFile || activeFileName,
+          },
+        }));
+      }
     });
 
     // 3. User Left
     socket.on('user-left', ({ socketId, user, users: updatedUsers, log }) => {
-      setUsers(updatedUsers);
+      if (Array.isArray(updatedUsers)) setUsers(updatedUsers);
       if (log) setLogs((prev) => [log, ...prev]);
       setRemoteCursors((prev) => {
         const next = { ...prev };
@@ -365,6 +424,7 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
   }, []);
 
   return {
+    socketId: socketRef.current?.id,
     roomId,
     setRoomId,
     passcode,

@@ -133,6 +133,12 @@ html, body {
   animation: fadeIn 0.2s ease-out;
 }
 
+/* Monaco Remote Selection Highlight */
+.monaco-remote-selection {
+  border-radius: 2px !important;
+  pointer-events: none;
+}
+
 /* Pulse animation for live indicators */
 @keyframes pulseGlow {
   0%, 100% {

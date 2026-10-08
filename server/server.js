@@ -142,6 +142,9 @@ print("Algorithm execution verified across workspace nodes.")
 // rooms[roomId] = { id, passcode, isProtected, files, activeFile, users, logs, version, createdAt, hostSocketId }
 const rooms = new Map();
 
+// Permanently closed rooms (purged from memory, blocked from re-creation/rejoining)
+const closedRooms = new Set();
+
 // ─── Per-socket Rate Limiter ────────────────────────────────────────────────
 // Allows at most 5 'code-change' broadcasts per socket per second.
 const rateLimits = new Map(); // socketId -> { count: number, windowStart: number }
@@ -166,6 +169,10 @@ function checkRateLimit(socketId) {
 
 function getOrCreateRoom(roomId, options = {}) {
   const { passcode = null, template = 'javascript' } = options;
+
+  if (closedRooms.has(roomId)) {
+    return null;
+  }
 
   if (!rooms.has(roomId)) {
     const templateSet = TEMPLATES[template] || TEMPLATES.javascript;
@@ -257,7 +264,18 @@ app.post('/api/rooms/verify', (req, res) => {
     return res.status(400).json({ error: 'Room ID is required.' });
   }
 
-  const room = rooms.get(roomId);
+  const cleanId = roomId.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+
+  if (closedRooms.has(cleanId)) {
+    return res.status(410).json({
+      exists: false,
+      isClosed: true,
+      valid: false,
+      error: 'This workspace room has been permanently closed.',
+    });
+  }
+
+  const room = rooms.get(cleanId);
   if (!room) {
     return res.json({
       exists: false,
@@ -295,6 +313,10 @@ app.post('/api/rooms/create', (req, res) => {
 
   const cleanId = roomId.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
 
+  if (closedRooms.has(cleanId)) {
+    return res.status(400).json({ error: `Room "${cleanId}" has been permanently closed and cannot be recreated.` });
+  }
+
   if (rooms.has(cleanId)) {
     return res.status(409).json({ error: `Room "${cleanId}" already exists.` });
   }
@@ -310,7 +332,12 @@ app.post('/api/rooms/create', (req, res) => {
 
 // 5. Room details
 app.get('/api/rooms/:roomId', (req, res) => {
-  const room = rooms.get(req.params.roomId);
+  const cleanId = req.params.roomId.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+  if (closedRooms.has(cleanId)) {
+    return res.status(410).json({ error: 'This room has been permanently closed.' });
+  }
+
+  const room = rooms.get(cleanId);
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
   }
@@ -334,7 +361,15 @@ io.on('connection', (socket) => {
   // Pre-check room status
   socket.on('check-room', ({ roomId }, callback) => {
     if (!roomId) return callback?.({ exists: false, isProtected: false });
-    const room = rooms.get(roomId);
+    const cleanId = roomId.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+    if (closedRooms.has(cleanId)) {
+      return callback?.({
+        exists: false,
+        isClosed: true,
+        error: 'This workspace room has been permanently closed.',
+      });
+    }
+    const room = rooms.get(cleanId);
     if (!room) {
       return callback?.({ exists: false, isProtected: false });
     }
@@ -348,6 +383,17 @@ io.on('connection', (socket) => {
   // 1. Join Room with Passcode Authentication
   socket.on('join-room', ({ roomId, passcode, user, template }) => {
     const targetRoomId = (roomId || 'default-room').trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+
+    // Block any attempt to join a room that was permanently closed
+    if (closedRooms.has(targetRoomId)) {
+      socket.emit('join-error', {
+        code: 'ROOM_CLOSED',
+        message: 'This workspace room has been permanently closed.',
+        isClosed: true,
+        roomId: targetRoomId,
+      });
+      return;
+    }
 
     // Check if room already exists
     let room = rooms.get(targetRoomId);
@@ -376,6 +422,15 @@ io.on('connection', (socket) => {
     } else {
       // Create new room with optional passcode & template
       room = getOrCreateRoom(targetRoomId, { passcode, template });
+      if (!room) {
+        socket.emit('join-error', {
+          code: 'ROOM_CLOSED',
+          message: 'This workspace room has been permanently closed.',
+          isClosed: true,
+          roomId: targetRoomId,
+        });
+        return;
+      }
     }
 
     // Leave any previous room
@@ -394,7 +449,9 @@ io.on('connection', (socket) => {
 
     currentUser = {
       socketId: socket.id,
-      id: user?.id || `usr_${socket.id.slice(0, 5)}`,
+      id: socket.id,
+      clientUserId: user?.id || socket.id,
+      name: user?.username || `Coder-${socket.id.slice(0, 4)}`,
       username: user?.username || `Coder-${socket.id.slice(0, 4)}`,
       color: user?.color || '#3b82f6',
       avatar: user?.avatar || '⚡',
@@ -430,6 +487,11 @@ io.on('connection', (socket) => {
       currentUser,
       logs: room.logs,
       version: room.version,
+    });
+
+    // Broadcast full updated array of connected users to ALL room sockets
+    io.in(currentRoomId).emit('users-update', {
+      users: usersList,
     });
 
     // Notify other room participants
@@ -502,7 +564,13 @@ io.on('connection', (socket) => {
   socket.on('typing-status', ({ roomId, isTyping }) => {
     if (!currentUser) return;
     currentUser.status = isTyping ? 'typing' : 'online';
-    socket.to(roomId || currentRoomId).emit('typing-update', {
+    const target = roomId || currentRoomId;
+    if (target && rooms.has(target)) {
+      io.in(target).emit('users-update', {
+        users: Array.from(rooms.get(target).users.values()),
+      });
+    }
+    socket.to(target).emit('typing-update', {
       socketId: socket.id,
       username: currentUser.username,
       isTyping,
@@ -516,6 +584,9 @@ io.on('connection', (socket) => {
 
     const oldName = currentUser.username;
     Object.assign(currentUser, updates);
+    if (updates.username) {
+      currentUser.name = updates.username;
+    }
 
     const log = addActivityLog(roomId || currentRoomId, {
       type: 'profile',
@@ -525,9 +596,14 @@ io.on('connection', (socket) => {
         : `${currentUser.username} customized their theme color`,
     });
 
+    const usersList = Array.from(room.users.values());
+    io.in(roomId || currentRoomId).emit('users-update', {
+      users: usersList,
+    });
+
     io.in(roomId || currentRoomId).emit('user-updated', {
       user: currentUser,
-      users: Array.from(room.users.values()),
+      users: usersList,
       log,
     });
   });
@@ -696,6 +772,12 @@ function removeUserFromRoom(socket, roomId, user = null, reason = 'left') {
   room.users.delete(socket.id);
   socket.leave(roomId);
 
+  // If the last member left or disconnected, purge room state and block future joins
+  if (room.users.size === 0) {
+    closeAndDestroyRoom(roomId, existingUser);
+    return;
+  }
+
   const leaveLog = addActivityLog(roomId, {
     type: 'leave',
     user: existingUser || { username: 'A collaborator', color: '#94a3b8' },
@@ -732,36 +814,45 @@ function removeUserFromRoom(socket, roomId, user = null, reason = 'left') {
         text: `👑 Host migrated to ${newHost.username} (previous host ${reason === 'disconnected' ? 'disconnected' : 'left'}).`,
       });
 
+      const updatedList = Array.from(room.users.values());
+      io.in(roomId).emit('users-update', { users: updatedList });
+
       io.in(roomId).emit('host-migrated', {
         newHostSocketId: newHost.socketId,
         newHost,
-        users: Array.from(room.users.values()),
+        users: updatedList,
         log: migrationLog,
       });
     } else {
       room.hostSocketId = null;
     }
-  } else if (room.users.size === 0) {
-    room.hostSocketId = null;
   }
+
+  const remainingUsers = Array.from(room.users.values());
+
+  // Broadcast full updated array of connected users on disconnect/leave
+  io.in(roomId).emit('users-update', { users: remainingUsers });
 
   socket.to(roomId).emit('user-left', {
     socketId: socket.id,
     user: existingUser,
-    users: Array.from(room.users.values()),
+    users: remainingUsers,
     log: leaveLog,
   });
 }
 
 // ── Helper: Close & Destroy Room Instance ───────────────────────────────────
 function closeAndDestroyRoom(roomId, requestingUser = null) {
-  if (!roomId || !rooms.has(roomId)) return false;
+  if (!roomId) return false;
+
+  // Mark room as permanently closed so any future join attempts are blocked
+  closedRooms.add(roomId);
 
   // Notify everyone in the room before tearing down
   io.in(roomId).emit('room-closed', {
     roomId,
     destroyed: true,
-    message: `Workspace "${roomId}" was completely closed and destroyed.`,
+    message: `Workspace "${roomId}" was permanently closed.`,
   });
 
   // Evict all sockets from this room
@@ -769,7 +860,7 @@ function closeAndDestroyRoom(roomId, requestingUser = null) {
 
   // Permanently delete room from server memory
   rooms.delete(roomId);
-  console.log(`🗑️ Room "${roomId}" completely destroyed by ${requestingUser?.username || 'user'}.`);
+  console.log(`🗑️ Room "${roomId}" permanently closed and purged by ${requestingUser?.username || 'user/last-member'}.`);
   return true;
 }
 

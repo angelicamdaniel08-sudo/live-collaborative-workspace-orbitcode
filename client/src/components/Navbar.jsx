@@ -139,10 +139,10 @@ export function Navbar({
       </div>
 
       {/* Center: Language & Editor Controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         {/* Language Selector */}
-        <div className="flex items-center gap-1.5 bg-slate-900/80 border border-white/10 rounded-lg px-2 py-1 text-xs">
-          <span className="text-slate-400">Language:</span>
+        <div className="h-8 flex items-center gap-1.5 bg-slate-900/80 border border-white/10 rounded-lg px-2.5 text-xs shadow-sm">
+          <span className="text-slate-400 font-medium">Language:</span>
           <select
             value={activeLanguage}
             onChange={(e) => onLanguageChange(e.target.value)}
@@ -157,8 +157,8 @@ export function Navbar({
         </div>
 
         {/* Theme Selector */}
-        <div className="flex items-center gap-1.5 bg-slate-900/80 border border-white/10 rounded-lg px-2 py-1 text-xs">
-          <span className="text-slate-400">Theme:</span>
+        <div className="h-8 flex items-center gap-1.5 bg-slate-900/80 border border-white/10 rounded-lg px-2.5 text-xs shadow-sm">
+          <span className="text-slate-400 font-medium">Theme:</span>
           <select
             value={editorTheme}
             onChange={(e) => setEditorTheme(e.target.value)}
@@ -172,11 +172,11 @@ export function Navbar({
           </select>
         </div>
 
-        {/* Run Code Button */}
+        {/* Run Code Button — height, padding, font size consistent with adjacent controls */}
         <button
           onClick={onRunCode}
           disabled={isExecuting}
-          className="btn-primary"
+          className="h-8 px-3.5 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-[0.98] border border-white/15 shadow-sm shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           title="Run Collaborative Code (Ctrl + Enter)"
         >
           {isExecuting ? (
@@ -194,11 +194,15 @@ export function Navbar({
       </div>
 
       {/* Right: Collaborators & Actions */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         {/* Terminal Toggle Button */}
         <button
           onClick={() => setIsTerminalOpen(!isTerminalOpen)}
-          className={`btn-secondary text-xs ${isTerminalOpen ? 'border-blue-500/40 text-blue-400 bg-blue-500/10' : ''}`}
+          className={`h-8 px-2.5 rounded-lg text-xs inline-flex items-center gap-1.5 font-medium border transition-all ${
+            isTerminalOpen 
+              ? 'border-blue-500/40 text-blue-400 bg-blue-500/10' 
+              : 'border-white/10 bg-slate-900/80 text-slate-300 hover:text-white hover:bg-slate-800'
+          }`}
           title="Toggle Shared Terminal Console"
         >
           <TerminalIcon className="w-3.5 h-3.5" />
@@ -206,7 +210,7 @@ export function Navbar({
         </button>
 
         {/* Active Collaborators count */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-950/40 border border-blue-500/20 text-xs text-blue-300">
+        <div className="h-8 flex items-center gap-1.5 px-2.5 rounded-lg bg-blue-950/40 border border-blue-500/20 text-xs text-blue-300">
           <Users className="w-3.5 h-3.5 text-blue-400" />
           <span className="font-semibold">{usersCount}</span>
           <span className="text-slate-400 hidden sm:inline">online</span>
@@ -215,7 +219,7 @@ export function Navbar({
         {/* Quick Share Link */}
         <button
           onClick={handleCopyLink}
-          className="btn-secondary text-xs"
+          className="h-8 px-2.5 rounded-lg text-xs inline-flex items-center gap-1.5 font-medium border border-white/10 bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white transition-all shadow-sm"
           title="Copy workspace invite link"
         >
           {copied ? (
@@ -234,12 +238,12 @@ export function Navbar({
         <div className="h-4 w-px bg-white/10" />
 
         {/* ── Room Session Controls: Leave Room & Close Room ── */}
-        {usersCount <= 1 ? (
-          /* Last remaining participant in the room: show BOTH Leave Room and Close Room */
+        {isHost || usersCount <= 1 ? (
+          /* Host or last remaining participant: show Leave Room and Close Room */
           <div className="flex items-center gap-1.5">
             <button
               onClick={onLeaveRoom}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-slate-600 text-xs text-slate-300 hover:text-white transition-all shadow-sm"
+              className="h-8 flex items-center gap-1.5 px-2.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-slate-600 text-xs text-slate-300 hover:text-white transition-all shadow-sm font-medium"
               title="Leave room (leaves workspace alive on server)"
             >
               <LogOut className="w-3.5 h-3.5 text-slate-400" />
@@ -247,18 +251,18 @@ export function Navbar({
             </button>
             <button
               onClick={() => setShowCloseConfirm(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 hover:border-rose-500/60 text-xs text-rose-300 hover:text-rose-200 transition-all shadow-sm font-semibold"
-              title="Completely destroy and delete this workspace from the server"
+              className="h-8 flex items-center gap-1.5 px-2.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 hover:border-rose-500/60 text-xs text-rose-300 hover:text-rose-200 transition-all shadow-sm font-semibold"
+              title="Permanently close and delete this workspace from the server"
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-400" />
               <span>Close Room</span>
             </button>
           </div>
         ) : (
-          /* Multiple participants: show Leave Room */
+          /* Other participants: show Leave Room */
           <button
             onClick={onLeaveRoom}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/80 hover:bg-rose-950/40 border border-white/10 hover:border-rose-500/30 text-xs text-slate-300 hover:text-rose-300 transition-all shadow-sm"
+            className="h-8 flex items-center gap-1.5 px-2.5 rounded-lg bg-slate-900/80 hover:bg-rose-950/40 border border-white/10 hover:border-rose-500/30 text-xs text-slate-300 hover:text-rose-300 transition-all shadow-sm font-medium"
             title="Leave workspace"
           >
             <LogOut className="w-3.5 h-3.5 text-slate-400" />

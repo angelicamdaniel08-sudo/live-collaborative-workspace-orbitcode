@@ -4,7 +4,8 @@ import { COLLAB_COLORS, AVATARS } from '../utils/helpers';
 
 export function ActiveUsersPanel({
   currentUser,
-  users,
+  socketId,
+  users = [],
   onUpdateUser,
 }) {
   const [isEditingName, setIsEditingName] = useState(false);
@@ -18,7 +19,29 @@ export function ActiveUsersPanel({
     }
   };
 
-  const otherUsers = users.filter((u) => u.id !== currentUser.id);
+  const mySocketId = socketId || currentUser?.socketId;
+
+  // Identify exactly which user in the room users list represents "You"
+  let myIndex = -1;
+  if (mySocketId) {
+    myIndex = users.findIndex((u) => u.socketId === mySocketId || u.id === mySocketId);
+  }
+  if (myIndex === -1 && currentUser) {
+    myIndex = users.findIndex(
+      (u) => (u.id === currentUser.id || u.clientUserId === currentUser.id) && u.username === currentUser.username
+    );
+  }
+  if (myIndex === -1 && currentUser?.id) {
+    myIndex = users.findIndex((u) => u.id === currentUser.id || u.clientUserId === currentUser.id);
+  }
+  if (myIndex === -1 && currentUser?.username) {
+    myIndex = users.findIndex((u) => u.username === currentUser.username);
+  }
+
+  // All users except "You" are remote collaborators!
+  const otherUsers = myIndex !== -1
+    ? users.filter((_, idx) => idx !== myIndex)
+    : users.filter((u) => (mySocketId ? u.socketId !== mySocketId : true));
 
   return (
     <div className="flex flex-col h-1/2 border-b border-white/10 bg-[#0f1424]/90 backdrop-blur-md overflow-hidden">
@@ -53,7 +76,7 @@ export function ActiveUsersPanel({
 
               {/* Name & Badge */}
               <div className="flex flex-col">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {isEditingName ? (
                     <div className="flex items-center gap-1">
                       <input
@@ -72,6 +95,11 @@ export function ActiveUsersPanel({
                     <>
                       <span className="text-xs font-semibold text-slate-100">{currentUser.username}</span>
                       <span className="badge badge-purple text-[10px] py-0 px-1.5">You</span>
+                      {currentUser.isHost && (
+                        <span className="badge badge-amber text-[10px] py-0 px-1.5 flex items-center gap-0.5">
+                          👑 Host
+                        </span>
+                      )}
                       <button 
                         onClick={() => setIsEditingName(true)} 
                         className="text-slate-400 hover:text-slate-200 p-0.5"
@@ -136,7 +164,6 @@ export function ActiveUsersPanel({
           <div className="text-center py-6 px-3 text-xs text-slate-500 bg-slate-900/40 rounded-lg border border-dashed border-white/5">
             <User className="w-6 h-6 mx-auto mb-1.5 text-slate-600 opacity-60" />
             <p>No other collaborators in this room yet.</p>
-            <p className="text-[11px] text-slate-600 mt-1">Open another tab or share link to test live collaboration!</p>
           </div>
         ) : (
           otherUsers.map((u) => (
@@ -156,8 +183,13 @@ export function ActiveUsersPanel({
                 </div>
 
                 <div className="flex flex-col">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-medium text-slate-200">{u.username}</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-medium text-slate-200">{u.username || u.name}</span>
+                    {u.isHost && (
+                      <span className="badge badge-amber text-[10px] py-0 px-1.5 flex items-center gap-0.5">
+                        👑 Host
+                      </span>
+                    )}
                   </div>
                   <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
                     {u.status === 'typing' ? (
