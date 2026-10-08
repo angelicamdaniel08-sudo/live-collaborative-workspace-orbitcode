@@ -10,7 +10,10 @@ import {
   Globe,
   RefreshCw,
   DoorOpen,
-  Plus
+  Plus,
+  LogOut,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { LANGUAGES, THEMES } from '../utils/helpers';
@@ -31,8 +34,12 @@ export function Navbar({
   setIsTerminalOpen,
   onOpenRoomModal,
   isHost,
+  onGoHome,
+  onLeaveRoom,
+  onCloseRoom,
 }) {
   const [copied, setCopied] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -50,8 +57,12 @@ export function Navbar({
     <header className="h-14 border-b border-white/10 bg-[#0c101c]/90 backdrop-blur-md px-4 flex items-center justify-between z-30 select-none">
       {/* Left: Brand & Room Controls */}
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+        <button
+          onClick={onGoHome}
+          className="flex items-center gap-2 text-left group hover:opacity-90 transition-opacity"
+          title="Return to Home Dashboard"
+        >
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25 group-hover:scale-105 transition-transform">
             <Zap className="w-4 h-4 text-white fill-white" />
           </div>
           <div>
@@ -59,9 +70,18 @@ export function Navbar({
               OrbitCode <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono font-normal">LIVE</span>
             </h1>
           </div>
-        </div>
+        </button>
 
         <div className="h-4 w-px bg-white/10" />
+
+        {/* Dashboard button */}
+        <button
+          onClick={onGoHome}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-white/10 text-xs text-slate-300 hover:text-white transition-all"
+          title="Leave room and return to Home Dashboard"
+        >
+          <span>Dashboard</span>
+        </button>
 
         {/* Room Switcher / Management Trigger */}
         <div className="flex items-center gap-1.5">
@@ -210,7 +230,77 @@ export function Navbar({
             </>
           )}
         </button>
+
+        <div className="h-4 w-px bg-white/10" />
+
+        {/* ── Room Session Controls: Leave Room & Close Room ── */}
+        {usersCount <= 1 ? (
+          /* Last remaining participant in the room: show BOTH Leave Room and Close Room */
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onLeaveRoom}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-slate-600 text-xs text-slate-300 hover:text-white transition-all shadow-sm"
+              title="Leave room (leaves workspace alive on server)"
+            >
+              <LogOut className="w-3.5 h-3.5 text-slate-400" />
+              <span className="hidden sm:inline">Leave Room</span>
+            </button>
+            <button
+              onClick={() => setShowCloseConfirm(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 hover:border-rose-500/60 text-xs text-rose-300 hover:text-rose-200 transition-all shadow-sm font-semibold"
+              title="Completely destroy and delete this workspace from the server"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>Close Room</span>
+            </button>
+          </div>
+        ) : (
+          /* Multiple participants: show Leave Room */
+          <button
+            onClick={onLeaveRoom}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/80 hover:bg-rose-950/40 border border-white/10 hover:border-rose-500/30 text-xs text-slate-300 hover:text-rose-300 transition-all shadow-sm"
+            title="Leave workspace"
+          >
+            <LogOut className="w-3.5 h-3.5 text-slate-400" />
+            <span className="hidden sm:inline">Leave Room</span>
+          </button>
+        )}
       </div>
+
+      {/* Close Room Confirmation Modal */}
+      {showCloseConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in select-none">
+          <div className="w-full max-w-sm bg-[#0d1222] border border-rose-500/40 rounded-2xl shadow-2xl p-6 text-center animate-scale-up">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mx-auto mb-4 text-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.2)]">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-white mb-1.5">Close & Destroy Workspace?</h3>
+            <p className="text-xs text-slate-400 mb-5 leading-relaxed">
+              You are the last participant. Closing <span className="font-mono text-white font-semibold">#{roomId}</span> will permanently destroy the room instance and clear all session files from the server.
+            </p>
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowCloseConfirm(false)}
+                className="flex-1 py-2 px-3 rounded-xl bg-slate-900 border border-white/10 text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCloseConfirm(false);
+                  if (onCloseRoom) onCloseRoom();
+                }}
+                className="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white shadow-lg shadow-rose-600/30 transition-all flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Destroy Room</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

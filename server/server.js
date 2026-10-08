@@ -370,16 +370,7 @@ io.on('connection', (socket) => {
 
     // Leave any previous room
     if (currentRoomId && currentRoomId !== targetRoomId) {
-      socket.leave(currentRoomId);
-      const prevRoom = rooms.get(currentRoomId);
-      if (prevRoom) {
-        prevRoom.users.delete(socket.id);
-        socket.to(currentRoomId).emit('user-left', {
-          socketId: socket.id,
-          user: currentUser,
-          users: Array.from(prevRoom.users.values()),
-        });
-      }
+      removeUserFromRoom(socket, currentRoomId, currentUser, 'switched');
     }
 
     currentRoomId = targetRoomId;
@@ -686,67 +677,121 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 8. Disconnect Cleanup + Dynamic Host Migration
-  socket.on('disconnect', () => {
-    // Clean up rate limit entry for this socket
-    rateLimits.delete(socket.id);
+// ── Helper: Remove User & Handle Dynamic Host Migration ──────────────────────
+function removeUserFromRoom(socket, roomId, user = null, reason = 'left') {
+  if (!roomId || !rooms.has(roomId)) return;
+  const room = rooms.get(roomId);
+  const existingUser = user || room.users.get(socket.id);
 
-    if (currentRoomId && rooms.has(currentRoomId)) {
-      const room = rooms.get(currentRoomId);
-      const user = room.users.get(socket.id);
+  room.users.delete(socket.id);
+  socket.leave(roomId);
 
-      room.users.delete(socket.id);
+  const leaveLog = addActivityLog(roomId, {
+    type: 'leave',
+    user: existingUser || { username: 'A collaborator', color: '#94a3b8' },
+    text: `${existingUser?.username || 'A collaborator'} ${reason === 'disconnected' ? 'disconnected' : 'left the workspace'}`,
+  });
 
-      const leaveLog = addActivityLog(currentRoomId, {
-        type: 'leave',
-        user: user || { username: 'A collaborator', color: '#94a3b8' },
-        text: `${user?.username || 'A collaborator'} disconnected`,
-      });
+  // ── Dynamic Host Migration ─────────────────────────────────────────────────
+  // If the leaving user was the host, or if host slot is vacant, and members remain:
+  const wasHost = room.hostSocketId === socket.id;
+  const isHostMissing = !room.hostSocketId || !room.users.has(room.hostSocketId);
 
-      // ── Dynamic Host Migration ─────────────────────────────────────────────
-      // If the disconnecting socket was the room host, reassign to the oldest
-      // remaining participant (lowest joinedAt timestamp).
-      if (room.hostSocketId === socket.id && room.users.size > 0) {
-        let newHost = null;
-        let oldestTime = Infinity;
+  if ((wasHost || isHostMissing) && room.users.size > 0) {
+    let newHost = null;
+    let oldestTime = Infinity;
 
-        room.users.forEach((u) => {
-          const t = new Date(u.joinedAt).getTime();
-          if (t < oldestTime) {
-            oldestTime = t;
-            newHost = u;
-          }
-        });
-
-        if (newHost) {
-          newHost.isHost = true;
-          room.hostSocketId = newHost.socketId;
-
-          const migrationLog = addActivityLog(currentRoomId, {
-            type: 'system',
-            user: { username: 'System', color: '#6366f1' },
-            text: `👑 Host migrated to ${newHost.username} (previous host disconnected).`,
-          });
-
-          // Notify the entire room of the host change
-          io.in(currentRoomId).emit('host-migrated', {
-            newHostSocketId: newHost.socketId,
-            newHost,
-            users: Array.from(room.users.values()),
-            log: migrationLog,
-          });
-        } else {
-          room.hostSocketId = null;
-        }
+    room.users.forEach((u) => {
+      const t = new Date(u.joinedAt).getTime();
+      if (t < oldestTime) {
+        oldestTime = t;
+        newHost = u;
       }
-      // ──────────────────────────────────────────────────────────────────────
+    });
 
-      socket.to(currentRoomId).emit('user-left', {
-        socketId: socket.id,
-        user,
-        users: Array.from(room.users.values()),
-        log: leaveLog,
+    if (newHost) {
+      // Clear host flag on all users, set on newHost
+      room.users.forEach((u) => {
+        u.isHost = u.socketId === newHost.socketId;
       });
+      room.hostSocketId = newHost.socketId;
+
+      const migrationLog = addActivityLog(roomId, {
+        type: 'system',
+        user: { username: 'System', color: '#6366f1' },
+        text: `👑 Host migrated to ${newHost.username} (previous host ${reason === 'disconnected' ? 'disconnected' : 'left'}).`,
+      });
+
+      io.in(roomId).emit('host-migrated', {
+        newHostSocketId: newHost.socketId,
+        newHost,
+        users: Array.from(room.users.values()),
+        log: migrationLog,
+      });
+    } else {
+      room.hostSocketId = null;
+    }
+  } else if (room.users.size === 0) {
+    room.hostSocketId = null;
+  }
+
+  socket.to(roomId).emit('user-left', {
+    socketId: socket.id,
+    user: existingUser,
+    users: Array.from(room.users.values()),
+    log: leaveLog,
+  });
+}
+
+// ── Helper: Close & Destroy Room Instance ───────────────────────────────────
+function closeAndDestroyRoom(roomId, requestingUser = null) {
+  if (!roomId || !rooms.has(roomId)) return false;
+
+  // Notify everyone in the room before tearing down
+  io.in(roomId).emit('room-closed', {
+    roomId,
+    destroyed: true,
+    message: `Workspace "${roomId}" was completely closed and destroyed.`,
+  });
+
+  // Evict all sockets from this room
+  io.in(roomId).socketsLeave(roomId);
+
+  // Permanently delete room from server memory
+  rooms.delete(roomId);
+  console.log(`🗑️ Room "${roomId}" completely destroyed by ${requestingUser?.username || 'user'}.`);
+  return true;
+}
+
+  // 8. Explicit Leave Room
+  socket.on('leave-room', ({ roomId }) => {
+    const targetRoom = roomId || currentRoomId;
+    if (targetRoom) {
+      removeUserFromRoom(socket, targetRoom, currentUser, 'left');
+      if (currentRoomId === targetRoom) {
+        currentRoomId = null;
+      }
+      socket.emit('left-room', { roomId: targetRoom });
+    }
+  });
+
+  // 9. Close Room (Completely destroy room instance on server)
+  socket.on('close-room', ({ roomId }) => {
+    const targetRoom = roomId || currentRoomId;
+    if (targetRoom && rooms.has(targetRoom)) {
+      closeAndDestroyRoom(targetRoom, currentUser);
+      if (currentRoomId === targetRoom) {
+        currentRoomId = null;
+      }
+    }
+  });
+
+  // 10. Disconnect Cleanup + Dynamic Host Migration
+  socket.on('disconnect', () => {
+    rateLimits.delete(socket.id);
+    if (currentRoomId && rooms.has(currentRoomId)) {
+      removeUserFromRoom(socket, currentRoomId, currentUser, 'disconnected');
+      currentRoomId = null;
     }
   });
 });

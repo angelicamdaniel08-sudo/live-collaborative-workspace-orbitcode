@@ -21,8 +21,8 @@ export function PasscodePromptModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-lg animate-fade-in">
-      <div className="w-full max-w-md bg-[#0d1222] border border-amber-500/30 rounded-2xl shadow-2xl p-6 text-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-lg animate-fade-in overflow-y-auto">
+      <div className="w-full max-w-md bg-[#0d1222] border border-amber-500/30 rounded-2xl shadow-2xl p-6 text-center my-auto">
         {/* Lock Icon */}
         <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4 text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
           <Lock className="w-7 h-7" />

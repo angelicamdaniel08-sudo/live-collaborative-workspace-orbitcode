@@ -36,6 +36,15 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
 
   // Connect & join room
   useEffect(() => {
+    if (!roomId) {
+      setConnectionStatus('idle');
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      return;
+    }
+
     setAuthError(null);
     setConnectionStatus('connecting');
 
@@ -193,6 +202,21 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
       if (log) setLogs((prev) => [log, ...prev]);
     });
 
+    // 12. Room Closed / Destroyed
+    socket.on('room-closed', ({ roomId: closedId, message }) => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      setRoomId(null);
+      setPasscode('');
+      setFiles({});
+      setUsers([]);
+      setIsHost(false);
+      setRemoteCursors({});
+      setConnectionStatus('idle');
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -298,6 +322,40 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
     setAuthError(null);
   }, []);
 
+  const leaveRoom = useCallback(() => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('leave-room', { roomId });
+    }
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    setRoomId(null);
+    setPasscode('');
+    setFiles({});
+    setUsers([]);
+    setIsHost(false);
+    setRemoteCursors({});
+    setConnectionStatus('idle');
+  }, [roomId]);
+
+  const closeRoom = useCallback(() => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('close-room', { roomId });
+    }
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    setRoomId(null);
+    setPasscode('');
+    setFiles({});
+    setUsers([]);
+    setIsHost(false);
+    setRemoteCursors({});
+    setConnectionStatus('idle');
+  }, [roomId]);
+
   const clearTerminal = useCallback(() => {
     setTerminalLogs([]);
   }, []);
@@ -315,7 +373,10 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
     setAuthError,
     submitPasscode,
     switchRoom,
+    leaveRoom,
+    closeRoom,
     currentUser,
+    setCurrentUser,
     isHost,
     reconnectAttempts,
     rateLimitWarning,
