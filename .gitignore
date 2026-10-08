@@ -18,7 +18,9 @@ pnpm-debug.log*
 # Environment variables
 .env
 .env.local
+.env.production
 .env.*.local
+!.env.example
 *.env
 
 # Editor & OS files

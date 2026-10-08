@@ -9,13 +9,23 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 4000;
 const CLIENT_URL = process.env.CLIENT_URL || '*';
 
-app.use(cors());
+// Allow requests from the Vercel frontend (or all origins in local dev)
+const corsOptions = {
+  origin: CLIENT_URL === '*' ? '*' : CLIENT_URL.split(',').map(u => u.trim()),
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+};
+app.use(cors(corsOptions));
 app.use(express.json());
+
+// Health-check endpoint used by Railway
+app.get('/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: CLIENT_URL === '*' ? '*' : CLIENT_URL.split(',').map(u => u.trim()),
     methods: ['GET', 'POST'],
+    credentials: true,
   },
   pingTimeout: 60000,
 });
