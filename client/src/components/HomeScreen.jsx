@@ -13,10 +13,11 @@ import {
   ShieldCheck, 
   UserCheck, 
   LogOut,
-  ExternalLink
+  ExternalLink,
+  Server
 } from 'lucide-react';
-
-const API_BASE_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
+import { safeFetchJson, isBackendConfigured, getServerUrl } from '../utils/apiConfig';
+import { ServerConfigModal } from './ServerConfigModal';
 
 export function HomeScreen({
   currentUser,
@@ -28,17 +29,19 @@ export function HomeScreen({
 }) {
   const [activeRooms, setActiveRooms] = useState([]);
   const [isLoadingRooms, setIsLoadingRooms] = useState(false);
+  const [isServerModalOpen, setIsServerModalOpen] = useState(false);
+  const [serverState, setServerState] = useState(() => (isBackendConfigured() ? 'checking' : 'unconfigured'));
 
   const fetchRooms = async () => {
     try {
       setIsLoadingRooms(true);
-      const res = await fetch(`${API_BASE_URL}/api/rooms`);
-      if (res.ok) {
-        const data = await res.json();
-        setActiveRooms(data.rooms || []);
-      }
+      const data = await safeFetchJson('/api/rooms');
+      setActiveRooms(data.rooms || []);
+      setServerState('connected');
     } catch (err) {
-      console.warn('Failed to fetch rooms list:', err);
+      console.warn('Backend rooms fetch notice:', err.message);
+      setActiveRooms([]);
+      setServerState(isBackendConfigured() ? 'offline' : 'unconfigured');
     } finally {
       setIsLoadingRooms(false);
     }
@@ -67,8 +70,39 @@ export function HomeScreen({
           </div>
         </div>
 
-        {/* User Identity Pill & Sign Out */}
+        {/* Header Controls: Server Status & User Profile */}
         <div className="flex items-center gap-3">
+          {/* Server Endpoint Status Pill */}
+          <button
+            onClick={() => setIsServerModalOpen(true)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+              serverState === 'connected'
+                ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300 hover:bg-emerald-900/50'
+                : serverState === 'offline'
+                ? 'bg-rose-950/40 border-rose-500/30 text-rose-300 hover:bg-rose-900/50'
+                : 'bg-amber-950/40 border-amber-500/30 text-amber-300 hover:bg-amber-900/50'
+            }`}
+            title="Configure or test Railway backend server URL"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                serverState === 'connected'
+                  ? 'bg-emerald-400 animate-pulse'
+                  : serverState === 'offline'
+                  ? 'bg-rose-400'
+                  : 'bg-amber-400'
+              }`}
+            />
+            <span className="hidden sm:inline">
+              {serverState === 'connected'
+                ? 'Server Online'
+                : serverState === 'offline'
+                ? 'Server Offline'
+                : 'Set Server URL'}
+            </span>
+            <Server className="w-3.5 h-3.5 opacity-70" />
+          </button>
+
           <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-slate-900/80 border border-white/10 shadow-inner">
             <div
               className="w-7 h-7 rounded-full flex items-center justify-center text-sm shadow-sm"
@@ -211,6 +245,25 @@ export function HomeScreen({
             </button>
           </div>
 
+          {serverState !== 'connected' && (
+            <div className="mb-5 p-4 rounded-2xl bg-amber-950/20 border border-amber-500/20 backdrop-blur-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5 text-amber-300">
+                <Server className="w-4 h-4 shrink-0 text-amber-400" />
+                <span>
+                  {serverState === 'offline'
+                    ? 'Backend server is not responding. Ensure your Railway service is running and awake.'
+                    : 'Backend URL is not configured. Connect your Railway service URL to enable multi-user sync.'}
+                </span>
+              </div>
+              <button
+                onClick={() => setIsServerModalOpen(true)}
+                className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-200 font-semibold transition-all shrink-0"
+              >
+                Configure Backend URL
+              </button>
+            </div>
+          )}
+
           {activeRooms.length === 0 ? (
             <div className="text-center py-8 text-slate-500 text-xs border border-dashed border-white/5 rounded-xl">
               <p>No active public rooms currently online.</p>
@@ -256,6 +309,15 @@ export function HomeScreen({
           )}
         </div>
       </main>
+
+      {/* Backend Server Configuration Modal */}
+      <ServerConfigModal
+        isOpen={isServerModalOpen}
+        onClose={() => setIsServerModalOpen(false)}
+        onServerUrlChanged={() => {
+          fetchRooms();
+        }}
+      />
     </div>
   );
 }

@@ -15,8 +15,7 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-
-const API_BASE_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
+import { safeFetchJson } from '../utils/apiConfig';
 
 export function RoomModal({
   isOpen,
@@ -47,13 +46,11 @@ export function RoomModal({
   const fetchRooms = async () => {
     try {
       setIsLoadingRooms(true);
-      const res = await fetch(`${API_BASE_URL}/api/rooms`);
-      if (res.ok) {
-        const data = await res.json();
-        setAvailableRooms(data.rooms || []);
-      }
+      const data = await safeFetchJson('/api/rooms');
+      setAvailableRooms(data.rooms || []);
     } catch (err) {
-      console.warn('Could not load rooms list:', err);
+      console.warn('Could not load rooms list:', err.message);
+      setAvailableRooms([]);
     } finally {
       setIsLoadingRooms(false);
     }
@@ -86,17 +83,11 @@ export function RoomModal({
 
     // Verify room credentials against backend before switching
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/verify`, {
+      const data = await safeFetchJson('/api/rooms/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomId: cleanId, passcode: joinPasscode.trim() }),
       });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setJoinError(data.error || 'Failed to verify room credentials.');
-        return;
-      }
 
       if (data.exists && data.isProtected && !data.valid) {
         setJoinError('Incorrect passcode for this protected room.');
@@ -107,6 +98,10 @@ export function RoomModal({
       onJoinRoom(cleanId, joinPasscode.trim());
       onClose();
     } catch (err) {
+      if (err.status === 410 || err.message?.toLowerCase().includes('closed')) {
+        setJoinError(err.message || 'This room has been permanently closed.');
+        return;
+      }
       // Fallback: pass to client socket handler
       onJoinRoom(cleanId, joinPasscode.trim());
       onClose();
@@ -130,7 +125,7 @@ export function RoomModal({
     setCreateError('');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/create`, {
+      await safeFetchJson('/api/rooms/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -140,17 +135,15 @@ export function RoomModal({
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setCreateError(data.error || 'Failed to create room.');
-        setIsCreating(false);
-        return;
-      }
-
       // Room created successfully -> join it
       onJoinRoom(cleanId, isProtected ? createPasscode.trim() : '');
       onClose();
     } catch (err) {
+      if (err.status === 409 || err.status === 400) {
+        setCreateError(err.message || 'Failed to create room.');
+        setIsCreating(false);
+        return;
+      }
       // Socket fallback
       onJoinRoom(cleanId, isProtected ? createPasscode.trim() : '');
       onClose();

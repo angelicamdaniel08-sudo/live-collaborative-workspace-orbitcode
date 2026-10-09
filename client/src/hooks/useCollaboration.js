@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { getRandomUser } from '../utils/helpers';
-
-const SOCKET_SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
+import { getServerUrl } from '../utils/apiConfig';
 
 export function useCollaboration(initialRoomId = 'workspace-alpha', initialPasscode = '') {
   const [roomId, setRoomId] = useState(initialRoomId);
@@ -57,10 +56,25 @@ export function useCollaboration(initialRoomId = 'workspace-alpha', initialPassc
       return;
     }
 
+    const serverUrl = getServerUrl();
+    if (!serverUrl) {
+      setConnectionStatus('disconnected');
+      setLogs((prev) => [
+        {
+          id: `log_${Date.now()}`,
+          type: 'warning',
+          message: 'Backend server URL is not configured. Please set your Railway server URL in Settings.',
+          timestamp: new Date().toLocaleTimeString(),
+        },
+        ...prev,
+      ]);
+      return;
+    }
+
     setAuthError(null);
     setConnectionStatus('connecting');
 
-    const socket = io(SOCKET_SERVER_URL, {
+    const socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,

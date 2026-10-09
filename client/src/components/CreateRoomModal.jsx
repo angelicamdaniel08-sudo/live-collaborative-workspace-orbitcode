@@ -16,8 +16,7 @@ import {
   Share2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-
-const API_BASE_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
+import { safeFetchJson } from '../utils/apiConfig';
 
 export function CreateRoomModal({ isOpen, onClose, onEnterRoom }) {
   // Phase: 'form' | 'details'
@@ -81,7 +80,7 @@ export function CreateRoomModal({ isOpen, onClose, onEnterRoom }) {
     setError('');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/create`, {
+      const data = await safeFetchJson('/api/rooms/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -90,13 +89,6 @@ export function CreateRoomModal({ isOpen, onClose, onEnterRoom }) {
           template,
         }),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Failed to create room.');
-        setIsCreating(false);
-        return;
-      }
 
       // Transition to Phase 2: Show Room Details with Copy Buttons
       setCreatedRoomId(data.roomId);
@@ -111,7 +103,14 @@ export function CreateRoomModal({ isOpen, onClose, onEnterRoom }) {
         colors: ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b'],
       });
     } catch (err) {
-      // Fallback
+      if (err.status === 409 || err.status === 400) {
+        setError(err.message || 'Failed to create room.');
+        setIsCreating(false);
+        return;
+      }
+
+      // Offline or network fallback
+      console.warn('Backend createRoom notice:', err.message);
       setCreatedRoomId(cleanId);
       setCreatedPasscode(isProtected ? passcode.trim() : '');
       setPhase('details');

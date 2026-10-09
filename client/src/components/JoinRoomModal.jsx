@@ -13,7 +13,7 @@ import {
   Plus
 } from 'lucide-react';
 
-const API_BASE_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
+import { safeFetchJson } from '../utils/apiConfig';
 
 export function JoinRoomModal({ 
   isOpen, 
@@ -44,13 +44,11 @@ export function JoinRoomModal({
 
   const fetchRooms = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms`);
-      if (res.ok) {
-        const data = await res.json();
-        setRecentRooms(data.rooms || []);
-      }
+      const data = await safeFetchJson('/api/rooms');
+      setRecentRooms(data.rooms || []);
     } catch (err) {
-      console.warn('Could not fetch active rooms:', err);
+      console.warn('Could not fetch active rooms:', err.message);
+      setRecentRooms([]);
     }
   };
 
@@ -68,7 +66,7 @@ export function JoinRoomModal({
 
     try {
       // Validate credentials on backend before admitting the user
-      const res = await fetch(`${API_BASE_URL}/api/rooms/verify`, {
+      const data = await safeFetchJson('/api/rooms/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -76,14 +74,6 @@ export function JoinRoomModal({
           passcode: passcode.trim(),
         }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || 'Failed to verify room credentials.');
-        setIsVerifying(false);
-        return;
-      }
 
       // Check verification results
       if (!data.exists) {
@@ -105,7 +95,15 @@ export function JoinRoomModal({
       onSuccess(cleanId, passcode.trim());
       onClose();
     } catch (err) {
-      // In case of backend offline, admit directly via Socket.IO
+      // If room is closed or rejected by backend logic
+      if (err.status === 410 || err.message?.toLowerCase().includes('closed')) {
+        setError(err.message || 'This room has been permanently closed.');
+        setIsVerifying(false);
+        return;
+      }
+
+      // If backend is unconfigured or unreachable, warn user or fallback to direct socket join
+      console.warn('Backend verification fallback:', err.message);
       onSuccess(cleanId, passcode.trim());
       onClose();
     } finally {

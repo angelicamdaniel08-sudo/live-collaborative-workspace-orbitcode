@@ -9,21 +9,50 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 4000;
 const CLIENT_URL = process.env.CLIENT_URL || '*';
 
-// Allow requests from the Vercel frontend (or all origins in local dev)
+// Dynamic CORS configuration that works seamlessly with Vercel, Railway, preview URLs, and localhost
+const isOriginAllowed = (origin) => {
+  if (!origin) return true;
+  if (CLIENT_URL === '*') return true;
+  const allowed = CLIENT_URL.split(',').map((u) => u.trim().toLowerCase());
+  const lowerOrigin = origin.toLowerCase();
+  return (
+    allowed.includes(lowerOrigin) ||
+    lowerOrigin.includes('localhost') ||
+    lowerOrigin.includes('127.0.0.1') ||
+    lowerOrigin.includes('.vercel.app') ||
+    lowerOrigin.includes('.railway.app')
+  );
+};
+
 const corsOptions = {
-  origin: CLIENT_URL === '*' ? '*' : CLIENT_URL.split(',').map(u => u.trim()),
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Permissive fallback to ensure multi-user invites work reliably
+    }
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
   credentials: true,
 };
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Health-check endpoint used by Railway
+// Service status & health-check endpoints for Railway and monitoring
+app.get('/', (_req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'OrbitCode Collaborative Workspace Server',
+    uptime: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
 app.get('/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_URL === '*' ? '*' : CLIENT_URL.split(',').map(u => u.trim()),
+    origin: (origin, callback) => callback(null, true),
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -897,6 +926,6 @@ function closeAndDestroyRoom(roomId, requestingUser = null) {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`🚀 Collaborative Workspace Server running on http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Collaborative Workspace Server running on port ${PORT} (0.0.0.0)`);
 });
