@@ -9,33 +9,59 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 4000;
 const CLIENT_URL = process.env.CLIENT_URL || '*';
 
-// Dynamic CORS configuration that works seamlessly with Vercel, Railway, preview URLs, and localhost
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+// Allowed origin check — covers the Vercel app, all preview deploys, and local dev
+const ALLOWED_ORIGINS = [
+  'https://live-collaborative-workspace-orbitc.vercel.app',
+];
+
 const isOriginAllowed = (origin) => {
+  // Requests with no Origin header (e.g. curl, server-to-server) are always allowed
   if (!origin) return true;
-  if (CLIENT_URL === '*') return true;
-  const allowed = CLIENT_URL.split(',').map((u) => u.trim().toLowerCase());
-  const lowerOrigin = origin.toLowerCase();
-  return (
-    allowed.includes(lowerOrigin) ||
-    lowerOrigin.includes('localhost') ||
-    lowerOrigin.includes('127.0.0.1') ||
-    lowerOrigin.includes('.vercel.app') ||
-    lowerOrigin.includes('.railway.app')
-  );
+  // Env-variable explicit list (comma-separated)
+  if (CLIENT_URL !== '*') {
+    const explicit = CLIENT_URL.split(',').map((u) => u.trim().toLowerCase());
+    if (explicit.includes(origin.toLowerCase())) return true;
+  }
+  // Always allow localhost and 127.0.0.1 for development
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
+  // Allow all *.vercel.app preview/production deploys
+  if (origin.includes('.vercel.app')) return true;
+  // Allow any Railway internal domains
+  if (origin.includes('.railway.app') || origin.includes('.up.railway.app')) return true;
+  // Hard-coded production Vercel URL
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  return false;
 };
 
 const corsOptions = {
-  origin: (origin, callback) => {
-    if (isOriginAllowed(origin)) {
-      callback(null, true);
-    } else {
-      callback(null, true); // Permissive fallback to ensure multi-user invites work reliably
-    }
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
+  origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true,
+  optionsSuccessStatus: 204, // Some legacy browsers (IE11) choke on 204
 };
+
+// Apply CORS middleware globally
 app.use(cors(corsOptions));
+
+// Explicitly handle all OPTIONS preflight requests before any route handler
+app.options('*', cors(corsOptions));
+
+// Global middleware: guarantee Access-Control-Allow-Origin on every response
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && isOriginAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  next();
+});
+
 app.use(express.json());
 
 // Service status & health-check endpoints for Railway and monitoring
@@ -52,11 +78,16 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok', uptime: process.u
 
 const io = new Server(server, {
   cors: {
-    origin: (origin, callback) => callback(null, true),
+    // Use the same origin checker as Express so Socket.IO + REST are always in sync
+    origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
     methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     credentials: true,
   },
+  // Allow both WebSocket and polling — polling is the HTTP fallback that needs CORS too
+  transports: ['websocket', 'polling'],
   pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
 // Template packs for creating rooms
