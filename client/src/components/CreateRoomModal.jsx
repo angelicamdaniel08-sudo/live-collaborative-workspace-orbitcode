@@ -156,7 +156,7 @@ export function CreateRoomModal({ isOpen, onClose, onEnterRoom }) {
             </div>
             <div>
               <h3 className="text-sm font-bold text-white">
-                {phase === 'form' ? 'Create Collaborative Workspace' : 'Workspace Ready! 🎉'}
+                {phase === 'form' ? 'Create Collaborative Workspace' : 'Workspace Ready'}
               </h3>
               <p className="text-[11px] text-slate-400">
                 {phase === 'form' 
@@ -178,7 +178,7 @@ export function CreateRoomModal({ isOpen, onClose, onEnterRoom }) {
           <form onSubmit={handleCreateSubmit} className="p-6 space-y-5">
             {error && (
               <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                <span>⚠</span>
+                <span className="font-bold">!</span>
                 <span>{error}</span>
               </div>
             )}
@@ -398,8 +398,8 @@ export function CreateRoomModal({ isOpen, onClose, onEnterRoom }) {
 
             {/* Host Privilege Notice */}
             <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-500/20 text-xs text-blue-300 flex items-center gap-2">
-              <span className="text-base">👑</span>
-              <span>You have been designated as the <strong>Workspace Host</strong> for this session.</span>
+              <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0" />
+              <span>You are the <strong>Workspace Host</strong> for this session.</span>
             </div>
 
             {/* Enter Editor Space CTA Button */}

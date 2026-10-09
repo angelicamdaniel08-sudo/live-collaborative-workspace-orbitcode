@@ -9,7 +9,6 @@ import {
   FileCode2, 
   ArrowRight, 
   RefreshCw, 
-  Sparkles, 
   ShieldCheck, 
   UserCheck, 
   LogOut,
@@ -129,15 +128,11 @@ export function HomeScreen({
       <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-10 z-10 flex flex-col justify-center">
         {/* Personalized Greeting */}
         <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold mb-3">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Real-time Multi-User Cloud Workspace</span>
-          </div>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white">
-            Welcome, <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">{currentUser.username}</span> 👋
+            Welcome, <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">{currentUser.username}</span>
           </h2>
           <p className="text-slate-400 text-sm sm:text-base mt-3 max-w-xl mx-auto">
-            Choose an option below to start collaborative coding, pair-programming, or remote technical sessions.
+            Real-time collaborative code editor.
           </p>
 
           {/* Invited Room Quick Banner */}
@@ -172,17 +167,10 @@ export function HomeScreen({
               </div>
               <h3 className="text-xl font-bold text-white group-hover:text-blue-300 transition-colors flex items-center gap-2">
                 Create Room
-                <span className="text-xs font-normal px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">Host</span>
               </h3>
               <p className="text-slate-400 text-xs sm:text-sm mt-2.5 leading-relaxed">
-                Launch a brand new collaborative workspace. Configure custom Room IDs, starter templates, and optional passcode locks.
+                Start a new session with optional password protection.
               </p>
-
-              <div className="flex flex-wrap gap-2 mt-5">
-                <span className="text-[11px] px-2.5 py-1 rounded-md bg-slate-900 border border-white/5 text-slate-300">Custom ID</span>
-                <span className="text-[11px] px-2.5 py-1 rounded-md bg-slate-900 border border-white/5 text-slate-300">Passcode Vault</span>
-                <span className="text-[11px] px-2.5 py-1 rounded-md bg-slate-900 border border-white/5 text-slate-300">JS / Python / Blank</span>
-              </div>
             </div>
 
             <div className="mt-8 pt-4 border-t border-white/5 flex items-center justify-between text-blue-400 text-sm font-semibold group-hover:text-blue-300">
@@ -204,17 +192,10 @@ export function HomeScreen({
               </div>
               <h3 className="text-xl font-bold text-white group-hover:text-emerald-300 transition-colors flex items-center gap-2">
                 Join Room
-                <span className="text-xs font-normal px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Collaborate</span>
               </h3>
               <p className="text-slate-400 text-xs sm:text-sm mt-2.5 leading-relaxed">
-                Connect to an existing workspace with a Room ID. Securely authenticate with the room passcode if the space is private.
+                Join an active workspace using a Room ID.
               </p>
-
-              <div className="flex flex-wrap gap-2 mt-5">
-                <span className="text-[11px] px-2.5 py-1 rounded-md bg-slate-900 border border-white/5 text-slate-300">Live Delta Sync</span>
-                <span className="text-[11px] px-2.5 py-1 rounded-md bg-slate-900 border border-white/5 text-slate-300">Remote Cursors</span>
-                <span className="text-[11px] px-2.5 py-1 rounded-md bg-slate-900 border border-white/5 text-slate-300">Shared Terminal</span>
-              </div>
             </div>
 
             <div className="mt-8 pt-4 border-t border-white/5 flex items-center justify-between text-emerald-400 text-sm font-semibold group-hover:text-emerald-300">
